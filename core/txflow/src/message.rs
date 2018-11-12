@@ -26,7 +26,7 @@ pub struct Message<'a, P: 'a + Payload> {
     /// The hash of the message. Depends on the epoch.
     pub computed_hash: u64,
     /// Computed flag of whether this message is representative.
-    computed_is_representative: bool,
+    pub computed_is_representative: bool,
     /// Computed flag of whether this message is a kickout.
     computed_is_kickout: bool,
     /// Computed flag whether this message was created by an epoch leader.

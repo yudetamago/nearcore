@@ -44,7 +44,7 @@ impl<'a, P: 'a + Payload, W:'a+ WitnessSelector> DAG<'a, P, W> {
     pub fn add_existing_message(&mut self, message_data: SignedMessageData<P>) -> Result<(), &'static str> {
         // Check whether this is a new message.
         if self.messages.contains(&message_data.hash) {
-            return Ok({})
+            return Ok({});
         }
 
         // Wrap message data and connect to the parents so that the verification can be run.

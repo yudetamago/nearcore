@@ -10,3 +10,4 @@ mod message;
 mod group;
 mod group_approvals;
 pub mod dag;
+pub mod beacon_chain_consensus;
