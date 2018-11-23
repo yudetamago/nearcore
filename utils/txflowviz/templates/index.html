@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block body %}
+<div>
+    <h1> TxFlow Viz Tool</h1>
+    {% if not ok %}
+    <p>Logs NOT found at "{{ TXFLOW_LOGS }}"</p>
+    {% else %}
+    <p>Logs found at "{{ TXFLOW_LOGS }}"</p>
+
+    <hr>
+    <h2> Shards </h2>
+    <div class="row">
+        {% for shard in shards %}
+            <div class="col-lg-1">
+                <p><a class="btn btn-info" href="/shard/id/{{shard}}">{{shard}} &raquo;</a></p>
+            </div>
+        {% endfor %}
+    </div>
+
+    <hr>
+    <h2> Nodes </h2>
+    <div class="row">
+        {% for user in txflow.users %}
+            <div class="col-lg-1">
+                <p><a class="btn btn-info" href="/node/uid/{{user.uid}}">{{user.uid}} &raquo;</a></p>
+            </div>
+        {% endfor %}
+    </div>
+
+    <hr>
+    <h1> <a class="btn btn-success" href="/message/dashboard">Dashboard &raquo;</a></h2>
+
+    <hr>
+    <h2> Settings </h2>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Value</th>
+            </tr>
+        </thead>
+        <tbody>
+                <tr>
+                    <td> NUM_SHARDS </td>
+                    <td> {{txflow.num_shards}} </td>
+                </tr>
+                <tr>
+                    <td> NUM_VERIFIERS_PER_SHARD </td>
+                    <td> {{txflow.num_verifiers_per_shard}} </td>
+                </tr>
+                <tr>
+                    <td> NUM_NODES </td>
+                    <td> {{txflow.num_nodes}} </td>
+                </tr>
+                <tr>
+                    <td> NUM_EPOCHS_PER_VERIFIERS </td>
+                    <td> {{txflow.num_epochs_per_verifiers}} </td>
+                </tr>
+                <tr>
+                    <td> NUM_FRESH_TXFLOW_EPOCHS </td>
+                    <td> {{txflow.num_fresh_txflow_epochs}} </td>
+                </tr>
+        </tbody>
+    </table>
+
+    {% endif %}
+</div>
+{% endblock %}

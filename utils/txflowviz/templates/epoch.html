@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block body %}
+    <h1> {{ title }} </h1>
+    <div id="graph-container"></div>
+
+    <hr>
+
+    <div class="row">
+            <div class="col-sm-6">
+                <h2>Node Info</h2>
+                <table class="table table-hover">
+                    <tbody>
+                        <tr><td>Number of Messages</td><td>{{num_messages}}</td></tr>
+                        <tr><td>Number of Tx</td><td>{{num_tx}}</td></tr>
+                        <tr><td>Message rate</td><td>{{rate_messages}}</td></tr>
+                        <tr><td>Tx rate</td><td>{{rate_tx}}</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="col-sm-6">
+                <h2>Message Info</h2>
+                <table class="table table-hover">
+                    <tbody>
+                        <tr>
+                            <td>Hash</td><td><a id="ndHash" href="#"></a></td>
+                        </tr>
+                        <tr>
+                            <td>Owner</td><td><a id="ndOwner" href="#"></a></td>
+                        </tr>
+                        <tr>
+                            <td>Shard Id</td><td><a id="ndShardId" href="#"></a></td>
+                        </tr>
+                        <tr>
+                            <td>Epoch</td><td><a id="ndEpoch" href="#"></a></td>
+                        </tr>
+                        <tr>
+                            <td>Timestamp</td><td id="ndTimestamp"></td>
+                        </tr>
+                        <tr>
+                            <td>Parents</td><td id="ndParents"></td>
+                        </tr>
+                        <tr>
+                            <td>Transactions</td><td id="ndTransactions"></td>
+                        </tr>
+                        <tr>
+                            <td>IsCommit</td><td id="ndIsCommit"></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+    </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    s = new sigma(
+        {
+            container: 'graph-container',
+            type: 'canvas',
+            settings: {}
+        }
+    );
+
+    sigma.parsers.json('{{api_url}}', s, function(){
+        s.refresh();
+    });
+
+    s.bind("clickNode", function (e) {
+        node = e.data.node;
+
+        $("#ndHash").text(node.id);
+        $("#ndHash")[0].href = "/message/hash/" + node.id;
+
+        $("#ndOwner").text(node.owner);
+        $("#ndOwner")[0].href = "/node/uid/" + node.owner;
+
+        $("#ndShardId").text(node.shardid);
+        $("#ndShardId")[0].href = "/shard/id/" + node.shardid + "/node/uid/" + node.owner;
+
+        $("#ndEpoch").text(node.epoch);
+        $("#ndEpoch")[0].href = "/shard/id/" + node.shardid + "/epoch/" + node.epoch;
+
+        $("#ndTimestamp").text(node.timestamp);
+        $("#ndParents").text(node.num_parents);
+        $("#ndTransactions").text(node.num_transactions);
+        $("#ndIsCommit").text(node.is_commit);
+    });
+</script>
+{% endblock %}

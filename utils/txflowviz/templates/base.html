@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Network visualization">
+    <meta name="author" content="Near Inc.">
+
+    <title>TxFlow Viz</title>
+
+    <link rel="shortcut icon" href="static/ico/near.png">
+    <link href="/static/css/bootstrap.css" rel="stylesheet">
+    <link href="/static/css/custom.css" rel="stylesheet">
+</head>
+
+<body>
+
+    <div class="navbar navbar-inverse navbar-fixed-top">
+        <div class="container">
+            <div class="navbar-header">
+                <a class="navbar-brand" href="/">TxFlow @ Near</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        {% block body %}{% endblock %}
+        <hr>
+        <footer>
+            <p>&copy; Near Inc 2018</p>
+        </footer>
+
+    </div>
+
+    <script src="/static/js/jquery.js"></script>
+    <script src="/static/js/bootstrap.min.js"></script>
+    <script src="/static/js/sigma.js"></script>
+    <script src="/static/js/sigma.parsers.json.min.js"></script>
+
+    {% block scripts %}
+    {% endblock %}
+</body>
+</html>

@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block body %}
+<div>
+    <h2>Message Info</h2>
+    <table class="table table-hover">
+        <thead>
+            <tr>
+                <td>Key</td> <td>Value</td>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Hash</td><td id="ndHash">{{message.signed_message.body.hash}}</td>
+            </tr>
+            <tr>
+                <td>Owner</td>
+                <td id="ndOwner">
+                    <a href="/node/uid/{{message.signed_message.body.owner}}">{{message.signed_message.body.owner}}</a>
+                </td>
+            </tr>
+            <tr>
+                <td>Shard Id</td><td id="ndShardId">{{message.shard_id}}</td>
+            </tr>
+            <tr>
+                <td>Epoch</td><td id="ndEpoch">{{message.signed_message.body.epoch}}</td>
+            </tr>
+            <tr>
+                <td>Timestamp</td><td id="ndTimestamp">{{message.timestamp}}</td>
+            </tr>
+            <tr>
+                <td>Parents</td>
+                <td id="ndParents">
+                    {% for par in message.signed_message.body.parent %}
+                        <a href="/message/hash/{{par}}">{{par}}</a> |
+                    {% endfor %}
+                </td>
+            </tr>
+            <tr>
+                <td>Transactions</td><td id="ndTransactions">{{message.signed_message.body.transactions}}</td>
+            </tr>
+            <tr>
+                <td>IsCommit</td><td id="ndIsCommit">{{message.signed_message.body.isCommit}}</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+{% endblock %}

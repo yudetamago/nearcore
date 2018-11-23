@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block body %}
+<!-- <div>
+    <h2>Information</h2>
+    <table class="table table-hover">
+        <thead>
+            <tr>
+                <td>Key</td> <td>Value</td>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Number of Messages</td><td>{{num_messages}}</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+<hr> -->
+
+<h2>Last blocks</h2>
+<table class="table table-hover">
+    <thead>
+        <tr>
+            <td>Hash</td>
+            <td>Owner</td>
+            <td>Epoch</td>
+            <td>Shard</td>
+            <td>IsCommit</td>
+            <td>Timestamp</td>
+        </tr>
+    </thead>
+    <tbody>
+        {% for message in messages %}
+            <tr>
+                <td><a href="/message/hash/{{message.signed_message.body.hash}}">{{message.signed_message.body.hash[:8]}}</a></td>
+                <td><a href="/node/uid/{{message.signed_message.body.owner}}">{{message.signed_message.body.owner}}</a></td>
+                <td>{{message.signed_message.body.epoch}}</td>
+                <td>{{message.shard_id}}</td>
+                <td>{{message.signed_message.body.isCommit}}</td>
+                <td>{{message.timestamp}}</td>
+            </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% endblock %}
