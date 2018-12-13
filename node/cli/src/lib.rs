@@ -23,27 +23,30 @@ extern crate tokio;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
+use primitives::signature::DEFAULT_SIGNATURE;
 
 use clap::{App, Arg};
 use env_logger::Builder;
-use futures::future;
-use futures::Future;
+use futures::{Future, future, Stream, Sink, done};
 use futures::sync::mpsc::channel;
+use std::sync::mpsc::channel as sync_channel;
 use futures::sync::mpsc::Receiver;
 use futures::sync::mpsc::Sender;
 use parking_lot::{Mutex, RwLock};
+use std::sync::mpsc::Receiver as SyncReceiver;
 
 use beacon::types::{SignedBeaconBlock, BeaconBlockChain, SignedBeaconBlockHeader};
-use beacon_chain_handler::producer::ChainConsensusBlockBody;
 use chain::SignedBlock;
 use network::protocol::{Protocol, ProtocolConfig};
 use network::service::{create_network_task, NetworkConfiguration, new_network_service};
 use node_rpc::api::RpcImpl;
 use node_runtime::{Runtime, state_viewer::StateDbViewer};
 use primitives::signer::InMemorySigner;
-use primitives::types::SignedTransaction;
+use primitives::types::{SignedTransaction, SignedMessageData, MessageDataBody};
+use beacon_chain_handler::producer::{ShardChainPayload, ChainConsensusBlockBody};
 use shard::{SignedShardBlock, ShardBlockChain};
 use storage::{StateDb, Storage};
+use std::collections::HashSet;
 
 pub mod chain_spec;
 pub mod test_utils;
@@ -62,7 +65,9 @@ fn get_storage(base_path: &Path) -> Arc<Storage> {
 pub fn start_service(
     base_path: &Path,
     chain_spec_path: Option<&Path>,
-    consensus_task_fn: &Fn(Receiver<SignedTransaction>, &Sender<ChainConsensusBlockBody>) -> Box<Future<Item=(), Error=()> + Send>,
+//    consensus_task_fn: &Fn(
+//        Mutex<SyncReceiver<SignedTransaction>>,
+//        &Sender<ChainConsensusBlockBody>) -> Box<Future<Item=(), Error=()> + Send>,
 ) {
     let mut builder = Builder::new();
     builder.filter(Some("runtime"), log::LevelFilter::Debug);
@@ -89,7 +94,8 @@ pub fn start_service(
     // Create RPC Server.
     let state_db_viewer = StateDbViewer::new(shard_chain.clone(), state_db.clone());
     // TODO: TxFlow should be listening on these transactions.
-    let (transactions_tx, transactions_rx) = channel(1024);
+    let (transactions_tx, transactions_rx) = sync_channel();
+    let (async_transactions_tx, _transactions_rx) = channel(1024);
     let (receipts_tx, _receipts_rx) = channel(1024);
     let rpc_impl = RpcImpl::new(state_db_viewer, transactions_tx.clone());
     let rpc_handler = node_rpc::api::get_handler(rpc_impl);
@@ -129,7 +135,7 @@ pub fn start_service(
         protocol_config,
         beacon_chain.clone(),
         beacon_block_tx.clone(),
-        transactions_tx.clone(),
+        async_transactions_tx.clone(),
         receipts_tx.clone(),
         net_messages_tx.clone()
     );
@@ -142,10 +148,34 @@ pub fn start_service(
         protocol,
         net_messages_rx,
     );
-    let consensus_task = consensus_task_fn(
-        transactions_rx,
-        &beacon_block_consensus_body_tx,
-    );
+
+    let transactions_rx = Mutex::new(transactions_rx);
+    let consensus_task = done::<(), ()>(Ok(())).map(move |_| {
+        loop {
+            if let Ok(t) = transactions_rx.lock().recv() {
+                let message: SignedMessageData<ShardChainPayload> = SignedMessageData {
+                    owner_sig: DEFAULT_SIGNATURE,  // TODO: Sign it.
+                    hash: 0,  // Compute real hash
+                    body: MessageDataBody {
+                        owner_uid: 0,
+                        parents: HashSet::new(),
+                        epoch: 0,
+                        payload: (vec![t], vec![]),
+                        endorsements: vec![],
+                    },
+                };
+                let c = ChainConsensusBlockBody {
+                    messages: vec![message],
+                };
+                tokio::spawn(beacon_block_consensus_body_tx.clone().send(c).map(|_| ()).map_err(|e| {
+                    error!("Failure sending pass-through consensus {:?}", e);
+                }));
+            } else {
+                break;
+            }
+        }
+    });
+
     tokio::run(future::lazy(|| {
         tokio::spawn(future::lazy(|| {
             server.wait();
@@ -186,6 +216,6 @@ pub fn run() {
     start_service(
         base_path,
         chain_spec_path,
-        &test_utils::create_passthrough_beacon_block_consensus_task,
+        //&test_utils::create_passthrough_beacon_block_consensus_task,
     );
 }
