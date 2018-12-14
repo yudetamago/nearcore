@@ -13,6 +13,8 @@ use primitives::hash::CryptoHash;
 use primitives::traits::Decode;
 use primitives::types::{BlockId, ReceiptTransaction, SignedTransaction};
 use test_utils;
+use std::io;
+use std::io::prelude::*;
 
 /// time to wait (secs) for a request
 const REQUEST_WAIT: u64 = 60;

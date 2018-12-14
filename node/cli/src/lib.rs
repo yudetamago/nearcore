@@ -19,6 +19,7 @@ extern crate serde_json;
 extern crate shard;
 extern crate storage;
 extern crate tokio;
+extern crate keystore;
 
 use std::fs;
 use std::path::Path;
@@ -41,12 +42,21 @@ use network::protocol::{Protocol, ProtocolConfig};
 use network::service::{create_network_task, NetworkConfiguration, new_network_service};
 use node_rpc::api::RpcImpl;
 use node_runtime::{Runtime, state_viewer::StateDbViewer};
+use primitives::signature::get_keypair;
 use primitives::signer::InMemorySigner;
-use primitives::types::{SignedTransaction, SignedMessageData, MessageDataBody};
+use primitives::types::{SignedTransaction, SignedMessageData, MessageDataBody, TransactionBody,
+                        CreateAccountTransaction, DeployContractTransaction, ViewCall};
+use primitives::hash::hash;
+use primitives::traits::Encode;
 use beacon_chain_handler::producer::{ShardChainPayload, ChainConsensusBlockBody};
 use shard::{SignedShardBlock, ShardBlockChain};
 use storage::{StateDb, Storage};
 use std::collections::HashSet;
+use std::io;
+use std::io::prelude::*;
+use std::thread;
+use std::time::{Duration, Instant};
+use tokio::timer::Delay;
 
 pub mod chain_spec;
 pub mod test_utils;
@@ -69,6 +79,7 @@ pub fn start_service(
 //        Mutex<SyncReceiver<SignedTransaction>>,
 //        &Sender<ChainConsensusBlockBody>) -> Box<Future<Item=(), Error=()> + Send>,
 ) {
+
     let mut builder = Builder::new();
     builder.filter(Some("runtime"), log::LevelFilter::Debug);
     builder.filter(None, log::LevelFilter::Info);
@@ -94,12 +105,12 @@ pub fn start_service(
     // Create RPC Server.
     let state_db_viewer = StateDbViewer::new(shard_chain.clone(), state_db.clone());
     // TODO: TxFlow should be listening on these transactions.
-    let (transactions_tx, transactions_rx) = sync_channel();
+    let (transactions_tx, transactions_rx) = channel(1024);
     let (async_transactions_tx, _transactions_rx) = channel(1024);
     let (receipts_tx, _receipts_rx) = channel(1024);
-    let rpc_impl = RpcImpl::new(state_db_viewer, transactions_tx.clone());
-    let rpc_handler = node_rpc::api::get_handler(rpc_impl);
-    let server = node_rpc::server::get_server(rpc_handler);
+//    let rpc_impl = RpcImpl::new(state_db_viewer, transactions_tx.clone());
+//    let rpc_handler = node_rpc::api::get_handler(rpc_impl);
+//    let server = node_rpc::server::get_server(rpc_handler);
 
     // Create a task that consumes the consensuses and produces the beacon chain blocks.
     let signer = Arc::new(InMemorySigner::default());
@@ -149,10 +160,79 @@ pub fn start_service(
         net_messages_rx,
     );
 
-    let transactions_rx = Mutex::new(transactions_rx);
-    let consensus_task = done::<(), ()>(Ok(())).map(move |_| {
-        loop {
-            if let Ok(t) = transactions_rx.lock().recv() {
+
+    let state_db_viewer2 = StateDbViewer::new(shard_chain.clone(), state_db.clone());
+
+    // Fake contract creation and deployment.
+    let fake_rpc_task = done::<(), ()>(Ok(())).map(move |_| {
+        println!("FAKE RPC TASK IS RUNNING");
+        io::stdout().flush().ok().expect("AAA");
+        let (pk, _) = get_keypair();
+        let contract_name = format!("test_contract_{}", 0);
+        let account_creation_tx = TransactionBody::CreateAccount(CreateAccountTransaction {
+            nonce: 1,
+            sender: hash(b"alice"),
+            new_account_id: hash(b"eve"),
+            amount: 10,
+            public_key: pk.encode().unwrap()
+        });
+        let account_creation_tx = SignedTransaction::new(DEFAULT_SIGNATURE, account_creation_tx);
+
+        let wasm_binary = include_bytes!("../../../core/wasm/runtest/res/wasm_with_mem.wasm");
+        let deploy_tx = TransactionBody::DeployContract(DeployContractTransaction{
+            nonce: 1,
+            contract_id: hash(b"eve"),
+            wasm_byte_array: wasm_binary.to_vec(),
+            public_key: pk.encode().unwrap(),
+        });
+        let deploy_tx = SignedTransaction::new(DEFAULT_SIGNATURE, deploy_tx);
+        println!("SENDING ACCOUNT CREATION TRANSACTION");
+        io::stdout().flush().ok().expect("AAA");
+
+        let c_tx1 = transactions_tx.clone();
+        let c_tx2 = transactions_tx.clone();
+        tokio::spawn(
+            future::lazy(move || {
+                println!("SPAWNED ACCOUNT CREATION SENDER");
+                io::stdout().flush().ok().expect("AAA");
+                c_tx1.send(account_creation_tx).map(move |_| {
+                    println!("SENT ACCOUNT CREATION");
+                    io::stdout().flush().ok().expect("AAA");
+                }).map_err(|e| {
+                    error!("Failure sending account creation {:?}", e);
+                }).then(|_| {
+                    println!("SENDING CONTRACT DEPLOYMENT TRANSACTION");
+                    io::stdout().flush().ok().expect("AAA");
+
+                    println!("SPAWNED DEPLOYMENT SENDER");
+                    io::stdout().flush().ok().expect("AAA");
+                    c_tx2.send(deploy_tx).map(move |_| {
+                        println!("SENT DEPLOYMENT");
+                        io::stdout().flush().ok().expect("AAA");
+                    }).map_err(|e| {
+                        error!("Failure sending deployment sender {:?}", e);
+                    })
+                })
+            }).then(|_| Delay::new(Instant::now() + Duration::from_secs(1)))
+                .then(move |_| {
+                    let call = ViewCall::balance(hash(b"eve"));
+                    let result = state_db_viewer2.view(&call);
+                    println!("DEPLOYMENT RESULT {:?}", result);
+                    io::stdout().flush().ok().expect("AAA");
+                    if result.is_err() {
+                        println!("------------------------ERROR--------------------------------");
+                        io::stdout().flush().ok().expect("AAA");
+                    }
+                    Ok(())
+                })
+        );
+    });
+
+
+    let consensus_task = transactions_rx.fold(
+        (0, beacon_block_consensus_body_tx.clone()), |(counter, consensus_tx), t| {
+            println!("RECEIVED TRANSACTION {:?}", counter);
+            io::stdout().flush().ok().expect("AAA");
                 let message: SignedMessageData<ShardChainPayload> = SignedMessageData {
                     owner_sig: DEFAULT_SIGNATURE,  // TODO: Sign it.
                     hash: 0,  // Compute real hash
@@ -167,25 +247,41 @@ pub fn start_service(
                 let c = ChainConsensusBlockBody {
                     messages: vec![message],
                 };
-                tokio::spawn(beacon_block_consensus_body_tx.clone().send(c).map(|_| ()).map_err(|e| {
-                    error!("Failure sending pass-through consensus {:?}", e);
-                }));
-            } else {
-                break;
-            }
-        }
-    });
+            println!("ABOUT TO SPAWN CONSENSUS SENDER {:?}", counter);
+            io::stdout().flush().ok().expect("AAA");
+            let copy_counter = counter;
+            let c_tx = consensus_tx.clone();
+            tokio::spawn(
+                future::lazy(move || {
+                    println!("SPAWNED CONSENSUS SENDER {:?}", copy_counter);
+                    io::stdout().flush().ok().expect("AAA");
+                    c_tx.send(c).map(move |_| {
+                        println!("SENT CONSENSUS {:?}", copy_counter);
+                        io::stdout().flush().ok().expect("AAA");
+                    }).map_err(|e| {
+                        error!("Failure sending pass-through consensus {:?}", e);
+                    })
+                })
+            );
+            future::ok((counter+1, consensus_tx.clone()))
+        })
+        .map(|_| ())
+        .map_err(|_| ());
+    println!("DEFAULT EXECUTOR: {:?}", tokio::executor::DefaultExecutor::current());
 
     tokio::run(future::lazy(|| {
-        tokio::spawn(future::lazy(|| {
-            server.wait();
-            Ok(())
-        }));
+        tokio::spawn(fake_rpc_task);
+        tokio::spawn(consensus_task);
+//        tokio::spawn(future::lazy(|| {
+//            server.wait();
+//            Ok(())
+//        }));
         tokio::spawn(block_producer_task);
         tokio::spawn(block_importer_task);
         tokio::spawn(messages_handler_task);
+
+        //thread::sleep(Duration::from_secs(1));
         tokio::spawn(network_task);
-        tokio::spawn(consensus_task);
         Ok(())
     }));
 }

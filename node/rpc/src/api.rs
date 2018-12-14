@@ -17,6 +17,8 @@ use types::{
     StakeRequest, SwapKeyRequest, ViewAccountRequest,
     ViewAccountResponse,
 };
+use std::io;
+use std::io::prelude::*;
 
 build_rpc_trait! {
     pub trait TransactionApi {
@@ -234,7 +236,11 @@ impl TransactionApi for RpcImpl {
     }
 
     fn rpc_submit_transaction(&self, r: SignedTransaction) -> JsonRpcResult<()> {
+        println!("[RPC] SENDING TRANSACTION");
+        io::stdout().flush().ok().expect("AAA");
         self.submit_txn_sender.lock().unwrap().send(r).unwrap();
+        println!("[RPC] TRANSACTION SENT");
+        io::stdout().flush().ok().expect("AAA");
         //self.submit_txn_sender.clone().try_send(r).unwrap();
         Ok(())
     }
