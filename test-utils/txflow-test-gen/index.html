@@ -1,6 +1,7 @@
 <meta charset="UTF-8">
 <html>
 <head>
+<script src=txflow_def.js></script>
 <script src=txflow.js></script>
 <script src=utils.js></script>
 <script src=beacon.js></script>
@@ -22,9 +23,13 @@ body {
     <br>
     <button style="width: 200px" onclick='if (num_users < 26) num_users ++; refresh(); serialize();'>Add User</button><br>
     <button style="width: 200px" onclick='if (num_users > 1) num_users --; refresh(); serialize();'>Remove User</button><br>
-    <button style="width: 200px" onclick='alert(stress_epoch_blocks(nodes, num_users))'>Stress Epoch Blocks</button><br>
+    <button style="width: 200px" onclick='alert(stress_epoch_blocks(ctx, nodes, num_users))'>Stress Epoch Blocks</button><br>
     <button style="width: 200px" onclick='alert(stress_beacon(nodes, num_users))' id='btn_stress_beacon'>Stress Beacon</button><br>
-    <input id='random_graph_num_malicious' style='width:75px' placeholder='Malicious'><input id='random_graph_num_nodes' style='width: 75px' placeholder='Nodes'><button style="width: 50px" onclick='generate_random_graph(num_users, parseInt(document.getElementById("random_graph_num_malicious").value), parseInt(document.getElementById("random_graph_num_nodes").value), beacon_mode)'>rnd</button><br>
+    <input id='random_graph_num_malicious' style='width:75px' placeholder='Malicious'><input id='random_graph_num_nodes' style='width: 75px' placeholder='Nodes'><button style="width: 50px" onclick='generate_random_graph(num_users, parseInt(document.getElementById("random_graph_num_malicious").value), parseInt(document.getElementById("random_graph_num_nodes").value), beacon_mode); ctx = new Context(num_users);'>rnd</button><br>
+    <br>
+    Apply definition to selected node:<br>
+    <select id='tdef_name' style='width: 100px'></select> <input id=tdef_arg style='width: 75px'></input><button onclick='apply_tdef()'>Run</button>
+    <pre id='tdef_output' style='text-align: left'></pre>
 </div><br><br>
 <div id='comment_holder'>
 <b>Comment:</b><br>
@@ -53,6 +58,8 @@ body {
 
 <script>
 
+use_short_circuit = false;
+
 var PIXEL_RATIO = (function () {
     var ctx = document.createElement("canvas").getContext("2d"),
         dpr = window.devicePixelRatio || 1,
@@ -71,6 +78,8 @@ var names = ['Alice', 'Bob', 'Carol', 'Dave', 'Elaine', 'Frank', 'George', 'Hans
 var num_users = 4;
 var graph = [];
 var nodes = undefined;
+
+var ctx = new Context(num_users);
 
 var set_click_listener = function(btn, owner_id) {
     btn.onclick = function() {
@@ -126,6 +135,8 @@ here.onclick = function(e) {
     return;
 }
 
+var node_els = {};
+
 var refresh = function() {
     document.getElementById('buttons').innerHTML = '';
     var buttons = [];
@@ -147,13 +158,14 @@ var refresh = function() {
             selected.push(nodes[i]);
         }
     }
-    var annotations = selected.length == 0 ? [] : compute_annotations(selected, num_users);
+    var annotations = selected.length == 0 ? [] : compute_annotations(ctx, selected, num_users);
 
     if (beacon_mode) {
         add_beacon_annotations(nodes, annotations, num_users);
     }
 
     annot.innerHTML = '';
+    node_els = {};
     for (var annotation_idx in annotations) {
         var annotation = annotations[annotation_idx];
 
@@ -165,7 +177,9 @@ var refresh = function() {
         a.style.width = node.coords.w - 1 + 'px';
         a.style.height = node.coords.h - 1 + 'px';
 
-        var title = '<u>' + names[node.owner] + '</u>';
+        node_els[node.uid] = a;
+
+        var title = '<u>' + names[node.owner] + '</u> (' + annotation.epoch + ")";
         if (beacon_mode) {
             var title = '<u>' + names[node.owner][0] + '</u> ';
             if (node.payload_type) {
@@ -186,20 +200,31 @@ var refresh = function() {
         }
 
         var flags = "";
-        if (annotation.representative >= 0) {
-            flags += "<b>R" + annotation.representative + "</b><small>(";
-            var first = true;
-            for (var key in annotation.endorsements) {
-                if (!first) flags += ',';
-                first = false;
-                flags += names[key][0];
+        for (var property of annotation.properties) {
+            if (property.epoch !== undefined) {
+                if (flags != "") flags += ',';
+                flags += property.ltr + property.epoch;
             }
-            flags += ")</small> ";
         }
-        if (annotation.epoch_block) a.style.backgroundColor = '#D0FFD0';
-        if (annotation.kickout) flags += "<b>K</b>";
+
+        var vis_flags = "";
+        var saw_vis = {};
+        for (var other_annot of annotations) {
+            if (!other_annot.node.selected) continue;
+
+            for (var property of other_annot.properties) {
+                if (property.msg !== undefined && property.msg.uid == node.uid) {
+                    if (saw_vis[property.ltr] !== undefined) continue;
+                    saw_vis[property.ltr] = true;
+                    if (vis_flags != "") vis_flags += ',';
+                    vis_flags += property.ltr;
+                }
+            }
+        }
+
         var extra = beacon_mode ? '<small><b>' + STATE_NAMES[annotation.state] + '</b>.' + annotation.substate + (annotation.substate == NUM_SUBSTATES - 1 && annotation.ready_to_increment ? '*' : '') + '</small>' + ((annotation.valid) ? '<b><font color=green>v</font></b>' : '<b><font color=red>x</font></b>')
-                                : 'E: ' + annotation.epoch + " / K: " + annotation.largest_kickout_promise + "<br>" + flags;
+                                : flags + '<br>' + vis_flags;
+
         a.innerHTML = '<small>(v' + node.uid + ')</small> ' + title + '<br>' + extra;
 
         annot.appendChild(a);
@@ -218,11 +243,11 @@ var refresh = function() {
         document.getElementById('chk_beacon').checked = beacon_mode;
     }
 
+    var settings_holder = document.getElementById('beacon_settings_holder');
+    var comment_holder = document.getElementById('comment_holder');
     if (beacon_mode) {
         document.getElementById('btn_stress_beacon').style.display = '';
         selected_node = get_only_selected_node(nodes);
-        var settings_holder = document.getElementById('beacon_settings_holder');
-        var comment_holder = document.getElementById('comment_holder');
 
         if (selected_node) {
             if (settings_holder.style.display == 'none') {
@@ -252,6 +277,8 @@ var refresh = function() {
     }
     else {
         document.getElementById('btn_stress_beacon').style.display = 'none';
+        settings_holder.style.display = 'none';
+        comment_holder.style.display = '';
     }
 
     serialize();
@@ -293,6 +320,7 @@ var deserialize = function() {
     beacon_mode = !!s.b;
     graph = deserialize_txflow(s.s, beacon_mode);
     num_users = s.n;
+    ctx = new Context(num_users);
     document.getElementById('comment').value = s.c;
     document.getElementById('rust_fn_name').value = s.f;
     refresh();
@@ -315,6 +343,73 @@ var show_rust = function() {
     txt.focus();
 
     txt.onblur = function() { document.body.removeChild(txt); }
+}
+
+var highlight_evidence = function(h) {
+    for (var key in node_els) {
+        node_els[key].style.backgroundColor = "#00000000";
+    }
+    for (var uid of h) {
+        console.log("Highlighting " + uid);
+        node_els[uid].style.backgroundColor = "#00308030";
+    }
+}
+
+var apply_tdef = function() {
+    var tdef_name = document.getElementById('tdef_name').value;
+    var tdef_arg = parseInt(document.getElementById('tdef_arg').value);
+
+    var def = null;
+    for (var def_ of ctx.definitions) {
+        if (def_.letter == tdef_name) {
+            def = def_;
+        }
+    }
+
+    if (def.args[1] == 'm') {
+        for (var node of nodes) {
+            if (node.uid == tdef_arg) {
+                tdef_arg = node;
+                break;
+            }
+        }
+    }
+
+    var create_report = function(def, r, indent) {
+        if (!indent) indent = "";
+        console.log(def, r);
+        var result = (typeof r === 'boolean') ? r : r.result;
+        var clr = (result ? "darkgreen" : "darkred");
+        if (def.kind == 'c') {
+            var highlight = JSON.stringify(r.evidence.map(x => x.uid));
+            return indent + "<font color=" + clr + " onmouseover='highlight_evidence(" + highlight + ")' onmouseout='highlight_evidence([])'>" + def.descr + "</font><br>";
+        }
+        else {
+            var ret = indent + "<font color=" + clr + ">" + def.kind + "</font><br>";
+            if (def.lst.length != r.evidence.length) {
+                console.error(def.lst.length, r.evidence.length);
+            }
+            for (var i = 0; i < def.lst.length; ++ i) {
+                ret += create_report(def.lst[i], r.evidence[i], indent + '  ');
+            }
+            return ret;
+        }
+    }
+
+    for (var node of nodes) {
+        if (node.selected) {
+            var r = def.cond(ctx, node, tdef_arg);
+            document.getElementById('tdef_output').innerHTML = create_report(def.cond, r);
+            break;
+        }
+    }
+}
+
+for (var def of ctx.definitions) {
+    var opt = document.createElement('option');
+    opt.value = def.letter;
+    opt.innerHTML = def.letter + ' (' + def.def_name + ')';
+    document.getElementById('tdef_name').appendChild(opt);
 }
 
 refresh();

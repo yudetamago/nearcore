@@ -1,4 +1,9 @@
-var txflow = require('./txflow.js');
+if (typeof module !== 'undefined') {
+    var txflow = require('./txflow.js');
+    compute_annotations = txflow.compute_annotations;
+    create_node = txflow.create_node;
+    toposort = txflow.toposort;
+}
 
 var _rand_int = function(n) {
     return Math.floor(Math.random() * n);
@@ -16,7 +21,6 @@ var get_only_selected_node = function(nodes) {
 
     return ret;
 }
-
 
 var _select_random_nodes = function(nodes) {
     if (nodes.length == 0) return [];
@@ -38,24 +42,35 @@ var _select_random_nodes = function(nodes) {
     }
 }
 
-var stress_epoch_blocks = function(nodes, num_users, seconds) {
+var stress_epoch_blocks = function(ctx, nodes, num_users) {
     if (nodes.length == 0) return "No nodes";
-    seconds = seconds || 2;
 
     var started = new Date().getTime();
     var iter = 0;
     var longest_epoch_blocks = [];
-    var longest_selected_node_ids = [];
-    while (new Date().getTime() - started < seconds * 1000) {
-        var selected_nodes = _select_random_nodes(nodes);
-        var annotations = txflow.compute_annotations(selected_nodes, num_users);
-        var epoch_blocks = [];
-        var selected_node_ids = selected_nodes.map(x => x.uid);
+    var longest_selected_node_id = [];
 
-        for (var a_idx = 0; a_idx < annotations.length; ++ a_idx) {
-            var a = annotations[a_idx];
-            if (a.epoch_block) {
-                epoch_blocks.push([a.representative, 'v' + a.node.uid]);
+    var annotations = compute_annotations(ctx, nodes, num_users);
+
+    var a_mapping = {};
+    for (var aidx = 0; aidx < annotations.length; ++ aidx) {
+        a_mapping[annotations[aidx].node.uid] = annotations[aidx];
+    }
+
+    for (var ta of annotations) {
+        var epoch_blocks = [];
+
+        for (var property of ta.properties) {
+            if (property.ltr == 'Z') {
+                var e = -1;
+                var a = a_mapping[property.msg.uid];
+                for (var op of a.properties) {
+                    if (op.ltr == 'R') {
+                        e = op.epoch;
+                    }
+                }
+
+                epoch_blocks.push([e, 'v' + property.msg.uid]);
             }
         }
 
@@ -68,19 +83,17 @@ var stress_epoch_blocks = function(nodes, num_users, seconds) {
             var right = epoch_blocks[i];
 
             if (left[0] != right[0] || left[1] != right[1]) {
-                return `FAILED!\nLeft: nodes: ${longest_selected_node_ids}, epoch blocks: ${longest_epoch_blocks}\nRight: nodes: ${selected_node_ids}, epoch blocks: ${epoch_blocks}`;
+                return `FAILED!\nLeft: node: ${longest_selected_node_id}, epoch blocks: ${longest_epoch_blocks}\nRight: node: ${ta.node.uid}, epoch blocks: ${epoch_blocks}`;
             }
         }
 
         if (epoch_blocks.length > longest_epoch_blocks.length) {
             longest_epoch_blocks = epoch_blocks;
-            longest_selected_node_ids = selected_node_ids;
+            longest_selected_node_id = ta.node.uid;
         }
-
-        ++ iter;
     }
 
-    return `PASSED!\nRan stress for ${seconds} seconds. Completed ${iter} iterations.\nLongest epoch blocks: ${longest_epoch_blocks}`;
+    return `PASSED!\nLongest epoch blocks: ${longest_epoch_blocks}`;
 }
 
 var stress_beacon = function(nodes, num_users, seconds) {
@@ -121,6 +134,7 @@ var generate_random_graph = function(num_users, num_malicious, num_nodes, beacon
 
     var mode_users_hanging = _rand_int(2);
     var mode_prefer_non_repr = _rand_int(2);
+    var mode_try_network_splits = _rand_int(2);
 
     var all_nodes = [];
     var nodes_as_seen = [];
@@ -174,9 +188,9 @@ var generate_random_graph = function(num_users, num_malicious, num_nodes, beacon
         var user_id = _random_user();
         var parents = _get_parents(user_id, i);
 
-        var node = txflow.create_node(user_id, parents);
+        var node = create_node(user_id, parents);
         if (mode_prefer_non_repr && _rand_int(3) != 0) {
-            var annotations = txflow.compute_annotations([node], num_users)
+            var annotations = compute_annotations([node], num_users)
             var skip = false;
             for (var a of annotations) {
                 if (a.node.uid == node.uid && a.representative != -1) {
@@ -212,8 +226,11 @@ var generate_random_graph = function(num_users, num_malicious, num_nodes, beacon
                 beacon_states.push(-1);
             }
 
-            var annotations = txflow.compute_annotations(graph, num_users)
-            var toposorted = txflow.toposort(graph);
+            var ctx = Context(num_users);
+            var annotations = compute_annotations(ctx, graph, num_users)
+            console.log(annotations, num_users);
+            var toposorted = toposort(graph);
+            console.log(toposorted);
             add_beacon_annotations(toposorted, annotations, num_users);
 
             for (var a of annotations) {
@@ -222,6 +239,7 @@ var generate_random_graph = function(num_users, num_malicious, num_nodes, beacon
                     var old_payload = node.payload_type || PAYLOAD_NONE;
                     beacon_states[node.owner] = a.state;
                     if (a.state == STATE_INIT) {
+                        console.log('annotating');
                         node.payload_type = PAYLOAD_PREVBLOCK;
                         node.prevblock = _rand_int(10);
                     }

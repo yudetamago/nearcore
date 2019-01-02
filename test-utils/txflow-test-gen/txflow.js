@@ -1,5 +1,12 @@
 // Any functions that has an argument `nodes` expects nodes to be toposorted
 
+if (typeof module !== 'undefined') {
+    var txflow_def = require('./txflow_def.js');
+    apply_txflow_definitions = txflow_def.apply_txflow_definitions;
+    Context = txflow_def.Context;
+}
+
+
 var last_node_uid = 0;
 var NODE_W = 72;
 var NODE_H = 40;
@@ -126,7 +133,7 @@ var render_nodes_cb = function(nodes, user_l, cb) {
     }
 }
 
-var compute_annotations = function(graph, num_users) {
+var compute_annotations = function(ctx, graph, num_users) {
     var nodes = toposort(graph);
     annotate_user_levels(nodes);
     var annotations = [];
@@ -138,19 +145,15 @@ var compute_annotations = function(graph, num_users) {
     for (var node_idx = 0; node_idx < nodes.length; ++ node_idx) {
         var node = nodes[node_idx];
         var owner = node.owner;
-        var a = {'node' : node, 'endorsements': {}, 'largest_kickout_promise': -1};
+        var a = {'node' : node};
 
         annotations.push(a);
         mapping[node.uid] = a;
 
         var largest_epoch = [];
-        var largest_kickout = [];
         for (var i = 0; i < num_users; ++ i) {
             largest_epoch[i] = -1;
-            largest_kickout[i] = -1;
         }
-        var largest_representative = -1;
-        var largest_previous_kickout_promise = -1;
 
         var visited = {};
         var dfs = function(node) {
@@ -159,32 +162,13 @@ var compute_annotations = function(graph, num_users) {
             }
             visited[node.uid] = 1;
 
-            for (var parent_idx = 0; parent_idx < node.parents.length; ++ parent_idx) {
-                var parent_ = node.parents[parent_idx];
+            for (var parent_ of node.parents) {
                 dfs(parent_);
-
-                if (largest_kickout[parent_.owner] > largest_kickout[node.owner]) {
-                    largest_kickout[node.owner] = largest_kickout[parent_.owner];
-                }
             }
 
             var a = mapping[node.uid];
             if (a.epoch > largest_epoch[node.owner]) {
                 largest_epoch[node.owner] = a.epoch;
-            }
-
-            if (a.representative > largest_representative) {
-                largest_representative = a.representative;
-            }
-
-            if (a.kickout) {
-                if (a.epoch > largest_kickout[node.owner]) {
-                    largest_kickout[node.owner] = a.epoch;
-                }
-            }
-
-            if (node.owner == owner && a.largest_kickout_promise > largest_previous_kickout_promise) {
-                largest_previous_kickout_promise = a.largest_kickout_promise;
             }
         }
         dfs(node);
@@ -197,154 +181,20 @@ var compute_annotations = function(graph, num_users) {
         }
 
         a.epoch = largest_epoch[node.owner];
-        a.representative = -1;
-        a.kickout = false;
+
         if (same_epoch > Math.floor(num_users * 2 / 3)) {
             a.epoch ++;
-            if (a.epoch % num_users == node.owner) {
-                if (largest_representative == a.epoch - 1 || a.epoch == 0) {
-                    a.representative = a.epoch;
-                }
-                else if (largest_representative < a.epoch) {
-                    a.kickout = true;
-
-                    if (a.epoch > largest_kickout[owner]) {
-                        largest_kickout[owner] = a.epoch;
-                    }
-                }
-            }
         }
-
-        if (largest_representative < largest_kickout[node.owner]) {
-            // There are some kickout votes happening. Let's see if one
-            //    of them is for the owner
-            // TODO: consider the case when a full cycle of validators rotate
-            //    without producing a single block
-            var my_skipped_epoch = -1;
-            for (var r = largest_representative + 1; r <= largest_kickout[node.owner]; ++ r) {
-                if (r % num_users == node.owner && a.epoch >= r) {
-                    // node.epoch >= r means the owner definitely posted
-                    //    the kickout message
-                    my_skipped_epoch = r;
-                    break;
-                }
-            }
-        
-            if (my_skipped_epoch > -1) {
-                // the user has posted the kickout, no representative was published since then
-                //     the epoch increases if either 2/3 of participants approved the kickout message,
-                //     or the previous representative is reachable
-                if (largest_representative == my_skipped_epoch - 1) {
-                    a.representative = my_skipped_epoch;
-                }
-                else {
-                    total_kickouts = 0;
-                    for (var i = 0; i < num_users; ++ i) {
-                        if (largest_kickout[i] >= my_skipped_epoch) {
-                            // approving a kickout for an epoch indicates
-                            //     an intent to kickout all previous msgs too
-                            ++ total_kickouts;
-                        }
-                    }
-                    if (total_kickouts > Math.floor(num_users * 2 / 3)) {
-                        a.representative = my_skipped_epoch;
-                    }
-                }
-            }
-        }
-
-        var dfs_endorse = function(node) {
-            if (visited[node.uid] !== 1) {
-                return;
-            }
-            visited[node.uid] = 2;
-
-            for (var parent_idx = 0; parent_idx < node.parents.length; ++ parent_idx) {
-                var parent_ = node.parents[parent_idx];
-                dfs_endorse(parent_);
-            }
-
-            if (mapping[node.uid].representative > -1) {
-                var ok = largest_previous_kickout_promise <= mapping[node.uid].representative;
-                for (var idx = 0; idx < node.owner_level_nodes.length; ++ idx ) {
-                    var conflict_node = node.owner_level_nodes[idx];
-                    if (conflict_node.uid != node.uid && visited[conflict_node.uid]) {
-                        ok = false;
-                    }
-                }
-
-                if (ok) {
-                    var num_endorsements = 0;
-                    for (var endorser in mapping[node.uid].endorsements) {
-                        ++ num_endorsements;
-                    }
-                    var was_epoch_block = num_endorsements > Math.floor(num_users * 2 / 3);
-
-                    if (mapping[node.uid].endorsements[owner] === undefined) {
-                        ++ num_endorsements;
-                    }
-                    var is_epoch_block = num_endorsements > Math.floor(num_users * 2 / 3);
-
-                    if (is_epoch_block && !was_epoch_block) {
-                        epoch_blocks_endorsed.push([mapping[node.uid].representative, node]);
-                    }
-
-                    mapping[node.uid].endorsements[owner] = true;
-                }
-            }
-        }
-        dfs_endorse(node);
-
-        a.largest_kickout_promise = largest_kickout[owner];
     }
 
-    var last_epoch_block = -1;
-    epoch_blocks_endorsed.sort((x, y) => x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0);
-    for (var i = 0; i < epoch_blocks_endorsed.length; ++ i) {
-        var epoch = epoch_blocks_endorsed[i][0];
-        var node = epoch_blocks_endorsed[i][1];
-        var a = mapping[node.uid];
-
-        a.epoch_block = true;
-
-        var visited = {};
-        var dfs_epoch = function(node) {
-            var ret = [-1, null]
-            if (visited[node.uid] !== undefined) {
-                return visited[node.uid];
-            }
-
-            for (var parent_idx = 0; parent_idx < node.parents.length; ++ parent_idx) {
-                var parent_ = node.parents[parent_idx];
-                var cand = dfs_epoch(parent_);
-                if (cand[0] > ret[0]) ret = cand;
-            }
-            
-            if (mapping[node.uid].representative > last_epoch_block && !mapping[node.uid].epoch_block) {
-                if (mapping[node.uid].representative > ret[0]) {
-                    ret = [mapping[node.uid].representative, node];
-                }
-            }
-
-            visited[node.uid] = ret;
-            return ret;
-        }
-
-        var dfs_from = node;
-        var iter = 0;
-        while (dfs_from) {
-            mapping[dfs_from.uid].epoch_block = true;
-            var mp = dfs_epoch(dfs_from);
-            visited = {};
-            dfs_from = mp[1];
-            ++ iter;
-            if (iter > 1000) {
-                console.error("Annotating epochs blocks entered an infinite loop?");
-                break;
+    ctx.message_epoch = (node) => mapping[node.uid].epoch;
+    for (var a of annotations) {
+        a.properties = apply_txflow_definitions(ctx, a.node);
+        for (var property of a.properties) {
+            if (property.ltr == 'R') {
+                a.representative = property.epoch;
             }
         }
-
-        last_epoch_block = epoch;
     }
 
     return annotations;
@@ -473,16 +323,8 @@ var deserialize_txflow = function(s, beacon_mode) {
     return graph;
 }
 
-var gen_rust_endorsements = function(node, num_users) {
-    var annotations = compute_annotations([node], num_users);
+var gen_rust_endorsements = function(node, num_users, a_mapping) {
     var nodes = toposort([node]);
-
-    var a_mapping = {};
-
-    for (var aidx = 0; aidx < annotations.length; ++ aidx) {
-        a_mapping[annotations[aidx].node.uid] = annotations[aidx];
-    }
-
     var ret = [];
 
     for (var i = 0; i < nodes.length; ++ i) {
@@ -512,7 +354,8 @@ var gen_rust_endorsements = function(node, num_users) {
 }
 
 var gen_rust = function(graph, num_users, fn_name, comment, serialized) {
-    var annotations = compute_annotations(graph, num_users);
+    var ctx = Context(num_users);
+    var annotations = compute_annotations(ctx, graph, num_users);
     var nodes = toposort(graph);
 
     var a_mapping = {};
@@ -554,7 +397,7 @@ var gen_rust = function(graph, num_users, fn_name, comment, serialized) {
         s += node.owner + ', 0, true => ' + var_names[i] + ';]); v[' + i + '] = Some(' + var_names[i] + ');\n'
         s += indent + 'test(&v);\n';
 
-        s += indent + 'test_endorsements(' + var_names[i] + ', ' + gen_rust_endorsements(node, num_users) + ', ' + num_users + ');\n';
+        s += indent + 'test_endorsements(' + var_names[i] + ', ' + gen_rust_endorsements(node, num_users, a_mapping) + ', ' + num_users + ');\n';
     }
 
     s += "    }\n"
@@ -562,6 +405,7 @@ var gen_rust = function(graph, num_users, fn_name, comment, serialized) {
 }
 
 if (typeof module !== 'undefined') {
+    module.exports.serialize_txflow = serialize_txflow;
     module.exports.deserialize_txflow = deserialize_txflow;
     module.exports.gen_rust = gen_rust;
     module.exports.create_node = create_node;
