@@ -20,15 +20,8 @@ const nearjs = new Near(nearClient);
 const TEST_MAX_RETRIES = 10;
 
 
-test('view pre-defined account works and returns correct name', async () => {
-    // We do not want to check the other properties of this account since we create other accounts
-    // using this account as the originator
-    const viewAccountResponse = await account.viewAccount(aliceAccountName);
-    expect(viewAccountResponse.account_id).toEqual(aliceAccountName);
-});
-
-test('create account and then view account returns the created account', async () => {
-    const newAccountName = await generateUniqueString("create.account.test");
+test('create account with a name that is too long should not succeed', async () => {
+    const newAccountName = await generateUniqueString("create.account.test.verylongnamewhichshouldnotwork");
     const newAccountPublicKey = '9AhWenZ3JddamBoyMqnTbp7yVbRuvqAv3zwfrWgfVRJE';
     const createAccountResponse = await account.createAccount(newAccountName, newAccountPublicKey, 1, aliceAccountName);
     const expctedAccount = {
@@ -38,62 +31,7 @@ test('create account and then view account returns the created account', async (
         code_hash: 'GKot5hBsd81kMupNCXHaqbhv3huEbxAFMLnpcX2hniwn',
         stake: 0,
     };
-
-    const viewAccountFunc = async () => {
-        return await account.viewAccount(newAccountName);
-    };
-    const checkConditionFunc = (result) => {
-        expect(result).toEqual(expctedAccount);
-        return true;
-    }
-    callUntilConditionIsMet(viewAccountFunc, checkConditionFunc, "Call view account until result matches expected value");
-});
-
-test('deploy contract and make function calls', async () => {
-    // Contract is currently living here https://studio.nearprotocol.com/?f=Wbe7Zvd
-    const data = [...fs.readFileSync('../tests/hello.wasm')];  
-    const initialAccount = await account.viewAccount(aliceAccountName);
-    const deployResult = await nearjs.deployContract(
-        aliceAccountName,
-        "test_contract",
-        data,
-        "FTEov54o3JFxgnrouLNo2uferbvkU7fHDJvt7ohJNpZY");
-    waitForNonceToIncrease(initialAccount);
-    const args = {
-        "name": "trex"
-    };
-    const viewFunctionResult = await nearjs.callViewFunction(
-        aliceAccountName,
-        "test_contract",
-        "near_func_hello", // this is the function defined in hello.wasm file that we are calling
-        args);
-    expect(viewFunctionResult).toEqual("hello trex");
-
-    var setCallValue = await generateUniqueString("setCallPrefix");
-    const accountBeforeScheduleCall = await account.viewAccount(aliceAccountName);
-    const setArgs = {
-        "value": setCallValue
-    }
-    const scheduleResult = await nearjs.scheduleFunctionCall(
-        0,
-        aliceAccountName,
-        "test_contract",
-        "near_func_setValue", // this is the function defined in hello.wasm file that we are calling
-        setArgs);
-    const callViewFunctionGetValue = async () => { 
-        return await nearjs.callViewFunction(
-            aliceAccountName,
-            "test_contract",
-            "near_func_getValue", // this is the function defined in hello.wasm file that we are calling
-            {});
-    };
-    const checkResult = async (result) => {
-        expect(result).toEqual(setCallValue);
-    }
-    callUntilConditionIsMet(
-        callViewFunctionGetValue,
-        checkResult,
-        "Call getValue until result is equal to expected value");
+    fail("the calls to create an invalid account should not return 200");
 });
 
 const callUntilConditionIsMet = async (functToPoll, condition, description) => {
