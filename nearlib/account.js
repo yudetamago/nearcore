@@ -1,4 +1,6 @@
 class Account {
+    
+
     constructor(nearClient) {
         this.nearClient = nearClient;
     }
@@ -20,6 +22,7 @@ class Account {
 
     /**
      * Generate a key from a random seed and create a new account with this key.
+     * This should be called from the client side only.
      */
     async createAccountWithRandomKey (newAccountId, amount, originatorAccountId) {
         const keyWithRandomSeed = await this.nearClient.generateNewKeyFromRandomSeed();
