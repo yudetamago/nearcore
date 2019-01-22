@@ -20,3 +20,10 @@ npm test
 ## Integration test
 
 Contract "hello.wasm" source code location: https://studio.nearprotocol.com/?f=mfaccXt
+
+## Publish to npm
+First, update the nearlib version in package.json to the desired value.
+Then, run
+```
+npm publish
+```
