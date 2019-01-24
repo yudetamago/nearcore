@@ -2,6 +2,7 @@ const KeyPair = require('./signing/key_pair');
 
 /**
  * Near account and account related operations. 
+ * Test change to documentation
  */
 class Account {
     constructor(nearClient) {
