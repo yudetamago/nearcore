@@ -12,5 +12,5 @@ module.exports = async function sendJson(method, url, json) {
         // No Content
         return null;
     }
-    return await response.json();
+    return await response.json(); 
 };
