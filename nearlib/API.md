@@ -111,7 +111,7 @@ manage this key pair.
 
 ## WalletAccount
 
-Wallet based account and signer that uses external wallet through the iframe to signs transactions.
+Wallet based account and signer that uses external wallet through the iframe to sign transactions.
 
 ### Parameters
 

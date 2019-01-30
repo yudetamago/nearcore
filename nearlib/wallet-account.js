@@ -6,7 +6,7 @@ const REQUEST_ID_LENGTH = 32;
 const LOCAL_STORAGE_KEY_SUFFIX = '_wallet_auth_key';
 
 /**
- * Wallet based account and signer that uses external wallet through the iframe to signs transactions.
+ * Wallet based account and signer that uses external wallet through the iframe to sign transactions.
  */
 class WalletAccount {
 
