@@ -1,6 +1,3 @@
-/**
- * Wallet based account and signer that uses external wallet through the iframe to signs transactions.
- */
 const EMBED_WALLET_URL_SUFFIX = '/embed/';
 const LOGIN_WALLET_URL_SUFFIX = '/login/';
 const RANDOM_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -8,8 +5,16 @@ const REQUEST_ID_LENGTH = 32;
 
 const LOCAL_STORAGE_KEY_SUFFIX = '_wallet_auth_key';
 
+/**
+ * Wallet based account and signer that uses external wallet through the iframe to signs transactions.
+ */
 class WalletAccount {
 
+    /**
+     * Constructs a new WalletAccount
+     * @param {string} appKeyPrefix an application prefix to use distinguish between multiple apps under the same origin.
+     * @param {string} walletBaseUrl base URL to the wallet (optional, default 'https://wallet.nearprotocol.com')
+     */
     constructor(appKeyPrefix, walletBaseUrl = 'https://wallet.nearprotocol.com') {
         this._walletBaseUrl = walletBaseUrl;
         this._authDataKey = appKeyPrefix + LOCAL_STORAGE_KEY_SUFFIX;
@@ -23,14 +28,27 @@ class WalletAccount {
         }
     }
 
+    /**
+     * Returns true, if this WalletAccount is authorized with the wallet.
+     */
     isSignedIn() {
         return !!this._authData.accountId;
     }
 
+    /**
+     * Returns authorized Account ID.
+     */
     getAccountId() {
         return this._authData.accountId || '';
     }
 
+    /**
+     * Redirects current page to the wallet authentication page.
+     * @param {string} contract_id contract ID of the application
+     * @param {string} title name of the application
+     * @param {string} success_url url to redirect on success
+     * @param {string} failure_url url to redirect on failure
+     */
     requestSignIn(contract_id, title, success_url, failure_url) {
         const currentUrl = new URL(window.location.href);
         let newUrl = new URL(this._walletBaseUrl + LOGIN_WALLET_URL_SUFFIX);
@@ -42,6 +60,9 @@ class WalletAccount {
         window.location.replace(newUrl.toString());
     }
 
+    /**
+     * Sign out from the current account.
+     */
     signOut() {
         this._authData = {};
         window.localStorage.removeItem(this._authDataKey);
@@ -69,10 +90,10 @@ class WalletAccount {
         this._walletWindow = iframe.contentWindow;
 
         // Message Event
-        window.addEventListener('message', this.receiveMessage.bind(this), false);
+        window.addEventListener('message', this._receiveMessage.bind(this), false);
     }
 
-    receiveMessage(event) {
+    _receiveMessage(event) {
         if (event.origin != this._walletBaseUrl) {
             // Only processing wallet messages.
             return;
@@ -131,9 +152,9 @@ class WalletAccount {
 
     /**
      * Sign a transaction. If the key for senderAccountId is not present, this operation
-     * will fail.
-     * @param {object} tx Transaction details
-     * @param {string} senderAccountId
+     * will fail. Sends a sign request to the wallet through the iframe.
+     * @param {object} tx transaction details object. Should contain body and hash
+     * @param {string} senderAccountId account ID of the sender
      */
     async signTransaction(tx, senderAccountId) {
         if (!this.isSignedIn() || senderAccountId !== this.getAccountId()) {

@@ -35,9 +35,9 @@ class NearClient {
         try {
             submitResponse = await this.request('submit_transaction', data);
         } catch(e) {
-            if (e.response) { console.log(e.response.text) }
-            else { console.log(e) }
-            throw (e)
+            if (e.response) { console.log(e.response.text); }
+            else { console.log(e); }
+            throw (e);
         }
         return submitResponse;
     }

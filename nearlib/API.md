@@ -19,20 +19,29 @@
         -   [Parameters](#parameters-4)
     -   [viewAccount](#viewaccount)
         -   [Parameters](#parameters-5)
--   [Near](#near)
+-   [WalletAccount](#walletaccount)
     -   [Parameters](#parameters-6)
-    -   [callViewFunction](#callviewfunction)
+    -   [isSignedIn](#issignedin)
+    -   [getAccountId](#getaccountid)
+    -   [requestSignIn](#requestsignin)
         -   [Parameters](#parameters-7)
-    -   [scheduleFunctionCall](#schedulefunctioncall)
+    -   [signOut](#signout)
+    -   [signTransaction](#signtransaction)
         -   [Parameters](#parameters-8)
-    -   [deployContract](#deploycontract)
-        -   [Parameters](#parameters-9)
-    -   [getTransactionStatus](#gettransactionstatus)
+-   [Near](#near)
+    -   [Parameters](#parameters-9)
+    -   [callViewFunction](#callviewfunction)
         -   [Parameters](#parameters-10)
-    -   [loadContract](#loadcontract)
+    -   [scheduleFunctionCall](#schedulefunctioncall)
         -   [Parameters](#parameters-11)
-    -   [createDefaultConfig](#createdefaultconfig)
+    -   [deployContract](#deploycontract)
         -   [Parameters](#parameters-12)
+    -   [getTransactionStatus](#gettransactionstatus)
+        -   [Parameters](#parameters-13)
+    -   [loadContract](#loadcontract)
+        -   [Parameters](#parameters-14)
+    -   [createDefaultConfig](#createdefaultconfig)
+        -   [Parameters](#parameters-15)
 
 ## KeyPair
 
@@ -99,6 +108,48 @@ manage this key pair.
 #### Parameters
 
 -   `accountId` **[string](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/String)** id of the account to look up
+
+## WalletAccount
+
+Wallet based account and signer that uses external wallet through the iframe to signs transactions.
+
+### Parameters
+
+-   `appKeyPrefix` **[string](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/String)** an application prefix to use distinguish between multiple apps under the same origin.
+-   `walletBaseUrl` **[string](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/String)** base URL to the wallet (optional, default '<https://wallet.nearprotocol.com'>) (optional, default `'https://wallet.nearprotocol.com'`)
+
+### isSignedIn
+
+Returns true, if this WalletAccount is authorized with the wallet.
+
+### getAccountId
+
+Returns authorized Account ID.
+
+### requestSignIn
+
+Redirects current page to the wallet authentication page.
+
+#### Parameters
+
+-   `contract_id` **[string](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/String)** contract ID of the application
+-   `title` **[string](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/String)** name of the application
+-   `success_url` **[string](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/String)** url to redirect on success
+-   `failure_url` **[string](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/String)** url to redirect on failure
+
+### signOut
+
+Sign out from the current account.
+
+### signTransaction
+
+Sign a transaction. If the key for senderAccountId is not present, this operation
+will fail. Sends a sign request to the wallet through the iframe.
+
+#### Parameters
+
+-   `tx` **[object](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/Object)** transaction details object. Should contain body and hash
+-   `senderAccountId` **[string](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/String)** account ID of the sender
 
 ## Near
 
