@@ -10826,14 +10826,14 @@ const REQUEST_ID_LENGTH = 32;
 const LOCAL_STORAGE_KEY_SUFFIX = '_wallet_auth_key';
 
 /**
- * Wallet based account and signer that uses external wallet through the iframe to signs transactions.
+ * Wallet based account and signer that uses external wallet through the iframe to sign transactions.
  */
 class WalletAccount {
 
     /**
      * Constructs a new WalletAccount
      * @param {string} appKeyPrefix an application prefix to use distinguish between multiple apps under the same origin.
-     * @param {string} walletBaseUrl base URL to the wallet (optional, default 'https://wallet.nearprotocol.com')
+     * @param {string} walletBaseUrl base URL to the wallet
      */
     constructor(appKeyPrefix, walletBaseUrl = 'https://wallet.nearprotocol.com') {
         this._walletBaseUrl = walletBaseUrl;
