@@ -116,7 +116,7 @@ Wallet based account and signer that uses external wallet through the iframe to 
 ### Parameters
 
 -   `appKeyPrefix` **[string](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/String)** an application prefix to use distinguish between multiple apps under the same origin.
--   `walletBaseUrl` **[string](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/String)** base URL to the wallet (optional, default '<https://wallet.nearprotocol.com'>) (optional, default `'https://wallet.nearprotocol.com'`)
+-   `walletBaseUrl` **[string](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/String)** base URL to the wallet (optional, default `'https://wallet.nearprotocol.com'`)
 
 ### isSignedIn
 
