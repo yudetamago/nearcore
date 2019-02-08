@@ -100,13 +100,11 @@ fn setup_network() {
     test_node_ready(base_path, bob_info.clone(), 3031, vec![alice_info]);
 }
 
-fn start_testnet() {
-    setup_network();
-
+fn create_account(name: &str) {
     // Create an account on alice node.
     Command::new("./scripts/rpc.py")
         .arg("create_account")
-        .arg("jason")
+        .arg(name)
         .arg("1")
         .arg("-d")
         .arg(KEY_STORE_PATH)
@@ -122,7 +120,7 @@ fn start_testnet() {
         let res = Command::new("./scripts/rpc.py")
             .arg("view_account")
             .arg("-a")
-            .arg("jason")
+            .arg(name)
             .arg("-u")
             .arg("http://127.0.0.1:3031/")
             .output()
@@ -130,6 +128,11 @@ fn start_testnet() {
         check_result(res).is_ok()
     };
     wait(view_account, 500, 60000);
+}
+
+fn start_testnet() {
+    setup_network();
+    create_account("jason");
 }
 
 fn get_latest_beacon_block() -> SignedBeaconBlockResponse {
@@ -175,26 +178,90 @@ fn test_two_nodes() {
 }
 
 #[test]
-#[should_panic]
-fn test_producing_blocks() {
+
+#[test]
+fn test_producing_one_block() {
     setup_network();
 
     let beacon_block_0 = get_latest_beacon_block();
     let shard_block_0 = get_latest_shard_block();
+
+    let bb0_hash = serde_json::to_string(&beacon_block_0).unwrap();
+    let sb0_hash = serde_json::to_string(&shard_block_0).unwrap();
+
+    create_account("jason");
+
+    let beacon_block_1 = get_latest_beacon_block();
+    let shard_block_1 = get_latest_shard_block();
+
+    let bb1_hash = serde_json::to_string(&beacon_block_1).unwrap();
+    let sb1_hash = serde_json::to_string(&shard_block_1).unwrap();
+
+    assert_ne!(bb0_hash, bb1_hash);
+    assert_ne!(sb0_hash, sb1_hash);
+}
+
+#[test]
+#[should_panic]
+fn test_send_money_block_produced(){
+    setup_network();
+
+    let beacon_block_0 = get_latest_beacon_block();
+    let shard_block_0 = get_latest_shard_block();
+
+    let bb0_hash = serde_json::to_string(&beacon_block_0).unwrap();
+    let sb0_hash = serde_json::to_string(&shard_block_0).unwrap();
 
     send_money("alice.near", "bob.near", 1);
 
     let beacon_block_1 = get_latest_beacon_block();
     let shard_block_1 = get_latest_shard_block();
 
-    let bb0_hash = serde_json::to_string(&beacon_block_0).unwrap();
     let bb1_hash = serde_json::to_string(&beacon_block_1).unwrap();
-
-    let sb0_hash = serde_json::to_string(&shard_block_0).unwrap();
     let sb1_hash = serde_json::to_string(&shard_block_1).unwrap();
 
     assert_ne!(bb0_hash, bb1_hash);
     assert_ne!(sb0_hash, sb1_hash);
+}
+
+fn test_balance_after_send_money() {
+    setup_network();
+
+    send_money("alice.near", "bob.near", 1);
+}
+
+#[test]
+#[should_panic]
+fn test_producing_two_blocks() {
+    setup_network();
+
+    let beacon_block_0 = get_latest_beacon_block();
+    let shard_block_0 = get_latest_shard_block();
+
+    let bb0_hash = serde_json::to_string(&beacon_block_0).unwrap();
+    let sb0_hash = serde_json::to_string(&shard_block_0).unwrap();
+
+    create_account("jason");
+
+    let beacon_block_1 = get_latest_beacon_block();
+    let shard_block_1 = get_latest_shard_block();
+
+    let bb1_hash = serde_json::to_string(&beacon_block_1).unwrap();
+    let sb1_hash = serde_json::to_string(&shard_block_1).unwrap();
+
+    assert_ne!(bb0_hash, bb1_hash, "First beacon block was not produced");
+    assert_ne!(sb0_hash, sb1_hash, "First shard block was not produced");
+
+    create_account("eve");
+
+    let beacon_block_2 = get_latest_beacon_block();
+    let shard_block_2 = get_latest_shard_block();
+
+    let bb2_hash = serde_json::to_string(&beacon_block_2).unwrap();
+    let sb2_hash = serde_json::to_string(&shard_block_2).unwrap();
+
+    assert_ne!(bb1_hash, bb2_hash, "Second beacon block was not produced");
+    assert_ne!(sb1_hash, sb2_hash, "Second shard block was not produced");
 }
 
 fn wait<F>(f: F, check_interval_ms: u64, max_wait_ms: u64)
