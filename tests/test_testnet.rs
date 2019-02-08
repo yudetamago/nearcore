@@ -1,5 +1,7 @@
+use std::net::SocketAddr;
 use std::panic;
 use std::path::Path;
+use std::path::PathBuf;
 use std::process::{Command, Output};
 use std::str::FromStr;
 use std::thread;
@@ -9,12 +11,12 @@ use configs::chain_spec::read_or_default_chain_spec;
 use configs::ClientConfig;
 use configs::NetworkConfig;
 use configs::RPCConfig;
+use node_http::types::SignedBeaconBlockResponse;
+use node_http::types::SignedShardBlockResponse;
 use primitives::hash::hash_struct;
 use primitives::network::PeerInfo;
 use primitives::signer::write_key_file;
 use primitives::test_utils::get_key_pair_from_seed;
-use std::net::SocketAddr;
-use std::path::PathBuf;
 
 fn test_node_ready(
     base_path: PathBuf,
@@ -66,13 +68,17 @@ fn check_result(output: Output) -> Result<String, String> {
 const TMP_DIR: &str = "./tmp/testnet";
 const KEY_STORE_PATH: &str = "./tmp/testnet/key_store";
 
-fn get_public_key() -> String {
+fn get_public_key(participant: &str) -> String {
     let key_store_path = Path::new(KEY_STORE_PATH);
-    let (public_key, secret_key) = get_key_pair_from_seed("alice.near");
+    let (public_key, secret_key) = get_key_pair_from_seed(&participant);
     write_key_file(key_store_path, public_key, secret_key)
 }
 
-fn start_testnet() {
+fn setup_network() {
+    // Setup network by launching two nodes.
+    // alice_node (boot node) listening at 127.0.0.1:3000 (3030 RPC Port)
+    // bob_node listening at 127.0.0.1:3001 (3031 RPC Port)
+
     // Start boot node.
     let mut base_path = PathBuf::from(TMP_DIR);
     base_path.push("node_alice");
@@ -92,6 +98,10 @@ fn start_testnet() {
         addr: SocketAddr::from_str("127.0.0.1:3001").unwrap(),
     };
     test_node_ready(base_path, bob_info.clone(), 3031, vec![alice_info]);
+}
+
+fn start_testnet() {
+    setup_network();
 
     // Create an account on alice node.
     Command::new("./scripts/rpc.py")
@@ -101,7 +111,7 @@ fn start_testnet() {
         .arg("-d")
         .arg(KEY_STORE_PATH)
         .arg("-k")
-        .arg(get_public_key())
+        .arg(get_public_key("alice.near"))
         .arg("-u")
         .arg("http://127.0.0.1:3030/")
         .output()
@@ -122,14 +132,74 @@ fn start_testnet() {
     wait(view_account, 500, 60000);
 }
 
+fn get_latest_beacon_block() -> SignedBeaconBlockResponse {
+    let output = Command::new("./scripts/rpc.py")
+        .arg("view_latest_beacon_block")
+        .output()
+        .expect("view_latest_shard_block command failed to process");
+    let result = check_result(output).unwrap();
+    serde_json::from_str(&result).unwrap()
+}
+
+fn get_latest_shard_block() -> SignedShardBlockResponse {
+    let output = Command::new("./scripts/rpc.py")
+        .arg("view_latest_shard_block")
+        .output()
+        .expect("view_latest_shard_block command failed to process");
+    let result = check_result(output).unwrap();
+    serde_json::from_str(&result).unwrap()
+}
+
+fn send_money(sender: &str, receiver: &str, amount: i32) {
+    let output = Command::new("./scripts/rpc.py")
+        .arg("send_money")
+        .arg("-d")
+        .arg(KEY_STORE_PATH)
+        .arg("-k")
+        .arg(get_public_key(sender))
+        .arg("--sender")
+        .arg(&sender)
+        .arg("--receiver")
+        .arg(&receiver)
+        .arg("--amount")
+        .arg(amount.to_string())
+        .output()
+        .expect("send_money command failed to process");
+
+    let _ = check_result(output).unwrap();
+}
+
 #[test]
 fn test_two_nodes() {
     start_testnet();
 }
 
+#[test]
+#[should_panic]
+fn test_producing_blocks() {
+    setup_network();
+
+    let beacon_block_0 = get_latest_beacon_block();
+    let shard_block_0 = get_latest_shard_block();
+
+    send_money("alice.near", "bob.near", 1);
+
+    let beacon_block_1 = get_latest_beacon_block();
+    let shard_block_1 = get_latest_shard_block();
+
+    let bb0_hash = serde_json::to_string(&beacon_block_0).unwrap();
+    let bb1_hash = serde_json::to_string(&beacon_block_1).unwrap();
+
+    let sb0_hash = serde_json::to_string(&shard_block_0).unwrap();
+    let sb1_hash = serde_json::to_string(&shard_block_1).unwrap();
+
+    assert_ne!(bb0_hash, bb1_hash);
+    assert_ne!(sb0_hash, sb1_hash);
+}
+
 fn wait<F>(f: F, check_interval_ms: u64, max_wait_ms: u64)
-where
-    F: Fn() -> bool,
+    where
+        F: Fn() -> bool,
 {
     let mut ms_slept = 0;
     while !f() {
