@@ -11,8 +11,7 @@ use configs::chain_spec::read_or_default_chain_spec;
 use configs::ClientConfig;
 use configs::NetworkConfig;
 use configs::RPCConfig;
-use node_http::types::SignedBeaconBlockResponse;
-use node_http::types::SignedShardBlockResponse;
+use node_http::types::{SignedShardBlockResponse, SignedBeaconBlockResponse, ViewAccountResponse};
 use primitives::hash::hash_struct;
 use primitives::network::PeerInfo;
 use primitives::signer::write_key_file;
@@ -100,6 +99,22 @@ fn setup_network() {
     test_node_ready(base_path, bob_info.clone(), 3031, vec![alice_info]);
 }
 
+fn view_account(account_name: Option<&str>) -> ViewAccountResponse {
+    let mut args = vec!["view_account"];
+    if let Some(a) = account_name {
+        args.push("--account");
+        args.push(a);
+    };
+    let output = Command::new("./scripts/rpc.py")
+        .args(args)
+        .output()
+        .expect("view_account command failed to process");
+
+    let result = check_result(output).unwrap();
+
+    serde_json::from_str::<ViewAccountResponse>(&result).unwrap()
+}
+
 fn create_account(name: &str) {
     // Create an account on alice node.
     Command::new("./scripts/rpc.py")
@@ -178,8 +193,6 @@ fn test_two_nodes() {
 }
 
 #[test]
-
-#[test]
 fn test_producing_one_block() {
     setup_network();
 
@@ -224,10 +237,20 @@ fn test_send_money_block_produced(){
     assert_ne!(sb0_hash, sb1_hash);
 }
 
+#[test]
+#[should_panic]
 fn test_balance_after_send_money() {
     setup_network();
 
+    let account = view_account(Some("alice.near"));
+
+    assert_eq!(account.amount, 100);
+
     send_money("alice.near", "bob.near", 1);
+
+    let account = view_account(Some("alice.near"));
+
+    assert_eq!(account.amount, 99);
 }
 
 #[test]
