@@ -1,7 +1,7 @@
 const nearlib = require('./');
 const sendJson = require('./internal/send-json');
 
-const localStorageAccountIdKey = 'dev_near_user';
+const localStorageAccountIdKey = 'dev_userv2';
 module.exports = {
     getConfig: async function() {
         return JSON.parse(decodeURIComponent(getCookie('fiddleConfig')));
