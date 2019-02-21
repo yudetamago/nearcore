@@ -20,22 +20,95 @@ use primitives::signature::{PublicKey, SecretKey, sign, Signature, verify};
 use super::nightshade::{AuthorityId, Block, BlockHeader, Nightshade, State};
 use primitives::aggregate_signature::BlsPublicKey;
 use primitives::aggregate_signature::BlsSecretKey;
+use primitives::types::UID;
+use primitives::types::ConsensusBlockBody;
 
 const COOLDOWN_MS: u64 = 50;
 
-pub enum Control {
-    Reset,
+pub enum Control<P> {
+    Reset((ConsensusPariticipants, P)),
     Stop,
 }
 
-#[derive(Clone, Debug, Serialize)]
+impl<P> Control<P>
+where
+    P: Send + Sync + Debug + Clone + Serialize + 'static,
+{
+}
+
+pub struct ConsensusPariticipants {
+    pub owner_uid: UID,
+    pub witness_uids: Vec<UID>,
+    /// Standard public/secret keys are used to sign payloads and gossips
+    pub public_keys: Vec<PublicKey>,
+    pub owner_secret_key: SecretKey,
+    /// BLS public/secret keys are used to sign state and aggregate signatures for proofs
+    pub bls_public_keys: Vec<BlsPublicKey>,
+    pub bls_owner_secret_key: BlsSecretKey,
+}
+
+impl ConsensusPariticipants {
+
+    pub fn new(
+        owner_uid: UID,
+        witness_uids: Vec<UID>,
+        public_keys: Vec<PublicKey>,
+        owner_secret_key: SecretKey,
+        bls_public_keys: Vec<BlsPublicKey>,
+        bls_owner_secret_key: BlsSecretKey,
+    ) -> Self {
+        // TODO support arbitrary ids
+        for i in 0..witness_uids.len() {
+            assert_eq!(i as u64, witness_uids[i]);
+        }
+        assert!(owner_uid < witness_uids.len() as u64);
+        Self {
+            owner_uid,
+            witness_uids,
+            public_keys,
+            owner_secret_key,
+            bls_public_keys,
+            bls_owner_secret_key,
+        }
+    }
+
+    pub fn owner_id(&self) -> usize {
+        0
+    }
+
+    pub fn num_authorities(&self) -> usize {
+        self.witness_uids.len()
+    }
+}
+
+
+/// Spawns `TxFlowTask` as a tokio task.
+pub fn spawn_task<
+    'a,
+    P: Send + Sync + Debug + Clone + Serialize + 'static,
+>(
+    messages_receiver: mpsc::Receiver<Gossip<P>>,
+    messages_sender: mpsc::Sender<Gossip<P>>,
+    control_receiver: mpsc::Receiver<Control<P>>,
+    consensus_sender: mpsc::Sender<ConsensusBlockBody<P>>,
+) {
+    let task = NightshadeTask::new(
+        messages_receiver,
+        messages_sender,
+        control_receiver,
+        consensus_sender,
+    );
+    tokio::spawn(task.for_each(|_| Ok(())));
+}
+
+#[derive(Hash, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Message {
     pub sender_id: AuthorityId,
     pub receiver_id: AuthorityId,
     pub state: State,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Hash, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GossipBody<P> {
     /// Use box because large size difference between variants
     NightshadeStateUpdate(Box<Message>),
@@ -43,10 +116,10 @@ pub enum GossipBody<P> {
     PayloadReply(Vec<SignedBlock<P>>),
 }
 
-#[derive(Debug)]
+#[derive(Hash, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Gossip<P> {
     pub sender_id: AuthorityId,
-    pub receiver_id: AuthorityId,
+    pub receiver_uid: AuthorityId,
     pub body: GossipBody<P>,
     signature: Signature,
 }
@@ -61,14 +134,14 @@ impl<P: Serialize> Gossip<P> {
 
         Self {
             sender_id,
-            receiver_id,
+            receiver_uid: receiver_id,
             body,
             signature: sign(hash.as_ref(), &sk),
         }
     }
 
     fn get_hash(&self) -> CryptoHash {
-        hash_struct(&(self.sender_id, self.receiver_id, &self.body))
+        hash_struct(&(self.sender_id, self.receiver_uid, &self.body))
     }
 
     fn verify(&self, pk: &PublicKey) -> bool {
@@ -76,7 +149,7 @@ impl<P: Serialize> Gossip<P> {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Hash, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SignedBlock<P> {
     block: Block<P>,
     signature: Signature,
@@ -103,25 +176,20 @@ impl<P: Serialize> SignedBlock<P> {
 pub struct NightshadeTask<P> {
     owner_id: AuthorityId,
     num_authorities: usize,
+    state: Option<ConsensusPariticipants>,
     /// Blocks from other authorities containing payloads. At the beginning of the consensus
     /// authorities only have their own block. It is required for an authority to endorse a block
     /// from other authority to have its block.
     authority_blocks: Vec<Option<SignedBlock<P>>>,
     nightshade: Option<Nightshade>,
-    /// Standard public/secret keys are used to sign payloads and gossips
-    public_keys: Vec<PublicKey>,
-    owner_secret_key: SecretKey,
-    /// BLS public/secret keys are used to sign state and aggregate signatures for proofs
-    bls_public_keys: Vec<BlsPublicKey>,
-    bls_owner_secret_key: BlsSecretKey,
     /// Channel to receive state updates from other authorities.
     state_receiver: mpsc::Receiver<Gossip<P>>,
     /// Channel to send state updates to other authorities
     state_sender: mpsc::Sender<Gossip<P>>,
     /// Channel to start/reset consensus
     /// Important: Reset only works the first time it is sent.
-    control_receiver: mpsc::Receiver<Control>,
-    consensus_sender: mpsc::Sender<BlockHeader>,
+    control_receiver: mpsc::Receiver<Control<P>>,
+    consensus_sender: mpsc::Sender<ConsensusBlockBody<P>>,
     /// None while not consensus have not been reached, and Some(outcome) after consensus is reached.
     consensus_reached: Option<BlockHeader>,
     /// Number of payloads from other authorities that we still don't have.
@@ -131,31 +199,23 @@ pub struct NightshadeTask<P> {
     cooldown_delay: Option<Delay>,
 }
 
-impl<P: Send + Debug + Clone + Serialize + 'static> NightshadeTask<P> {
+impl<P> NightshadeTask<P>
+where
+    P: Send + Debug + Clone + Serialize + 'static,
+{
     pub fn new(
-        owner_id: AuthorityId,
-        num_authorities: usize,
-        payload: P,
-        public_keys: Vec<PublicKey>,
-        owner_secret_key: SecretKey,
-        bls_public_keys: Vec<BlsPublicKey>,
-        bls_owner_secret_key: BlsSecretKey,
         state_receiver: mpsc::Receiver<Gossip<P>>,
         state_sender: mpsc::Sender<Gossip<P>>,
-        control_receiver: mpsc::Receiver<Control>,
-        consensus_sender: mpsc::Sender<BlockHeader>,
+        control_receiver: mpsc::Receiver<Control<P>>,
+        consensus_sender: mpsc::Sender<ConsensusBlockBody<P>>,
     ) -> Self {
-        let mut authority_blocks = vec![None; num_authorities];
-        authority_blocks[owner_id] = Some(SignedBlock::new(owner_id, payload, &owner_secret_key));
+        let num_authorities = 1;
         Self {
-            owner_id,
+            owner_id: 0,
             num_authorities,
-            authority_blocks,
+            state: None,
+            authority_blocks: vec![None; num_authorities],
             nightshade: None,
-            public_keys,
-            owner_secret_key,
-            bls_public_keys,
-            bls_owner_secret_key,
             state_receiver,
             state_sender,
             control_receiver,
@@ -164,6 +224,15 @@ impl<P: Send + Debug + Clone + Serialize + 'static> NightshadeTask<P> {
             missing_payloads: num_authorities - 1,
             cooldown_delay: None,
         }
+    }
+
+    pub fn reset(&mut self, state: ConsensusPariticipants, payload: P) {
+        self.owner_id = state.owner_uid as usize;
+        self.num_authorities = state.num_authorities();
+        self.state = Some(state);
+        self.authority_blocks = vec![None; self.num_authorities];
+        self.authority_blocks[self.owner_id] = Some(SignedBlock::new(self.owner_id, payload, &self.state.as_ref().unwrap().owner_secret_key));
+        self.missing_payloads = self.num_authorities - 1;
     }
 
     fn nightshade_as_ref(&self) -> &Nightshade {
@@ -179,8 +248,8 @@ impl<P: Send + Debug + Clone + Serialize + 'static> NightshadeTask<P> {
             Nightshade::new(self.owner_id as AuthorityId,
                             self.num_authorities as usize,
                             self.authority_blocks[self.owner_id].clone().unwrap().block.header,
-                            self.bls_public_keys.clone(),
-                            self.bls_owner_secret_key.clone(),
+                            self.state.as_ref().unwrap().bls_public_keys.clone(),
+                            self.state.as_ref().unwrap().bls_owner_secret_key.clone(),
             ));
     }
 
@@ -193,7 +262,7 @@ impl<P: Send + Debug + Clone + Serialize + 'static> NightshadeTask<P> {
             self.owner_id,
             message.receiver_id,
             GossipBody::NightshadeStateUpdate(Box::new(message)),
-            &self.owner_secret_key));
+            &self.state.as_ref().unwrap().owner_secret_key));
     }
 
     fn send_gossip(&self, message: Gossip<P>) {
@@ -229,14 +298,14 @@ impl<P: Send + Debug + Clone + Serialize + 'static> NightshadeTask<P> {
                 self.owner_id,
                 author,
                 GossipBody::PayloadRequest(vec!(author)),
-                &self.owner_secret_key,
+                &self.state.as_ref().unwrap().owner_secret_key,
             );
             self.send_gossip(gossip);
         }
     }
 
     fn process_gossip(&mut self, gossip: Gossip<P>) {
-        if !gossip.verify(&self.public_keys[gossip.sender_id]) {
+        if !gossip.verify(&self.state.as_ref().unwrap().public_keys[gossip.sender_id]) {
             return;
         }
 
@@ -258,7 +327,7 @@ impl<P: Send + Debug + Clone + Serialize + 'static> NightshadeTask<P> {
             self.owner_id,
             receiver_id,
             GossipBody::PayloadReply(payloads),
-            &self.owner_secret_key,
+            &self.state.as_ref().unwrap().owner_secret_key,
         );
         self.send_gossip(gossip);
     }
@@ -268,7 +337,7 @@ impl<P: Send + Debug + Clone + Serialize + 'static> NightshadeTask<P> {
             let authority_id = signed_payload.block.author();
 
             // If the signed block is not properly signed by its author, we mark the sender as adversary.
-            if !signed_payload.verify(&self.public_keys[authority_id]) {
+            if !signed_payload.verify(&self.state.as_ref().unwrap().public_keys[authority_id]) {
                 self.nightshade_as_mut_ref().set_adversary(sender_id);
                 continue;
             }
@@ -310,7 +379,7 @@ impl<P: Send + Debug + Clone + Serialize + 'static> NightshadeTask<P> {
                     self.owner_id,
                     authority,
                     GossipBody::PayloadRequest(vec!(authority)),
-                    &self.owner_secret_key,
+                    &self.state.as_ref().unwrap().owner_secret_key,
                 );
                 self.send_gossip(gossip);
             }
@@ -318,7 +387,10 @@ impl<P: Send + Debug + Clone + Serialize + 'static> NightshadeTask<P> {
     }
 }
 
-impl<P: Send + Debug + Clone + Serialize + 'static> Stream for NightshadeTask<P> {
+impl<P> Stream for NightshadeTask<P>
+where
+    P: Send + Debug + Clone + Serialize + 'static,
+{
     type Item = ();
     type Error = ();
 
@@ -326,8 +398,9 @@ impl<P: Send + Debug + Clone + Serialize + 'static> Stream for NightshadeTask<P>
         // Control loop
         loop {
             match self.control_receiver.poll() {
-                Ok(Async::Ready(Some(Control::Reset))) => {
+                Ok(Async::Ready(Some(Control::Reset((state, payload))))) => {
                     info!(target: "nightshade", "Control channel received Reset");
+                    self.reset(state, payload);
                     self.init_nightshade();
                     break;
                 }
@@ -373,8 +446,12 @@ impl<P: Send + Debug + Clone + Serialize + 'static> Stream for NightshadeTask<P>
                             self.consensus_reached = Some(outcome.clone());
 
                             let consensus_sender1 = self.consensus_sender.clone();
+                            let consensus = ConsensusBlockBody {
+                                messages: vec![],
+                                beacon_block_index: 0
+                            };
 
-                            tokio::spawn(consensus_sender1.send(outcome)
+                            tokio::spawn(consensus_sender1.send(consensus)
                                 .map(|_| ())
                                 .map_err(|e| error!("Failed sending consensus: {:?}", e))
                             );

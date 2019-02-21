@@ -22,7 +22,7 @@ fn empty_cryptohash() -> CryptoHash {
 
 /// Nightshade consensus run on top of outcomes proposed by each authority.
 /// Blocks represent authorities proposal.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Hash, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Block<P> {
     pub header: BlockHeader,
     payload: P,
@@ -53,7 +53,7 @@ impl<P: Serialize> Block<P> {
 /// BlockHeaders are used instead of Blocks as authorities proposal in the consensus.
 /// They are used to avoid receiving two different proposals from the same authority,
 /// and penalize such behavior.
-#[derive(Debug, Clone, Serialize, PartialOrd, Ord, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub struct BlockHeader {
     /// Authority proposing the block.
     pub author: AuthorityId,
@@ -68,7 +68,7 @@ pub struct BlockHeader {
 /// "outcome" will be used instead of "authority" to avoid confusion.
 ///
 /// The order of the fields are very important since lexicographical comparison is used derived from `PartialEq`.
-#[derive(Debug, Clone, Serialize, PartialOrd, Ord, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub struct BareState {
     /// How much confidence we have on `endorses`.
     pub primary_confidence: i64,
@@ -118,7 +118,7 @@ impl BareState {
 /// It must have signatures from more than 2/3 authorities on triplets of the form `(C - 1, O, C')`
 ///
 /// This is a lazy data structure. Aggregated signature is computed after all BLS parts are supplied.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Hash, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Proof {
     pub bare_state: BareState,
     mask: Vec<bool>,
@@ -184,7 +184,7 @@ pub enum NSVerifyErr {
 /// Proof for `primary_confidence` is a set of states of size greater than 2 / 3 * num_authorities signed
 /// by different authorities such that our current confidence (`primary_confidence`) on outcome `endorses`
 /// is consistent whit this set according to Nightshade rules.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Hash, Debug, Clone, Serialize, Deserialize)]
 pub struct State {
     /// Triplet that describe the state
     pub bare_state: BareState,
@@ -495,7 +495,7 @@ impl Nightshade {
 
 #[cfg(test)]
 mod tests {
-    use rand::{SeedableRng, XorShiftRng};
+    use rand_for_bls::{SeedableRng, XorShiftRng};
 
     use primitives::aggregate_signature::AggregateSignature;
 

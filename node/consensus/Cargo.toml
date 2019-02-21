@@ -12,6 +12,7 @@ primitives = { path = "../../core/primitives" }
 chain = { path = "../../core/chain" }
 coroutines = { path = "../coroutines" }
 txflow = { path = "../../core/txflow" }
+nightshade = { path = "../../core/nightshade" }
 typed-arena = "1.4.1"
 futures = "0.1.25"
 tokio = "0.1"

@@ -10,13 +10,13 @@ use primitives::aggregate_signature::BlsPublicKey;
 use primitives::aggregate_signature::BlsSecretKey;
 use primitives::signature::get_key_pair;
 
-use crate::nightshade::BlockHeader;
-
-use super::nightshade_task::{Control, NightshadeTask};
+use super::nightshade_task::{Control, NightshadeTask, ConsensusPariticipants};
+use std::collections::HashSet;
+use primitives::types::ConsensusBlockBody;
 
 const TASK_DURATION_SEC: u64 = 300;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 struct DummyPayload {
     dummy: u64,
 }
@@ -49,15 +49,9 @@ fn spawn_all(num_authorities: usize) {
             consensus_rx_vec.push(consensus_rx);
 
             let payload = DummyPayload { dummy: owner_id as u64 };
+            let witnesses = (0 as u64 .. num_authorities as u64).collect();
 
             let task: NightshadeTask<DummyPayload> = NightshadeTask::new(
-                owner_id,
-                num_authorities,
-                payload,
-                public_keys.clone(),
-                secret_keys[owner_id].clone(),
-                bls_public_keys.clone(),
-                bls_secret_keys[owner_id].clone(),
                 inc_gossips_rx,
                 out_gossips_tx,
                 control_rx,
@@ -66,8 +60,16 @@ fn spawn_all(num_authorities: usize) {
 
             tokio::spawn(task.for_each(|_| Ok(())));
 
+            let consensus = ConsensusPariticipants::new(
+                owner_id as u64,
+                witnesses,
+                public_keys.clone(),
+                secret_keys[owner_id].clone(),
+                bls_public_keys.clone(),
+                bls_secret_keys[owner_id].clone(),
+            );
             // Start the task using control channels, and stop it after 1 second
-            let start_task = control_tx.clone().send(Control::Reset)
+            let start_task = control_tx.clone().send(Control::Reset((consensus, payload)))
                 .map(|_| ()).map_err(|e| error!("Error sending control {:?}", e));
             tokio::spawn(start_task);
 
@@ -87,7 +89,7 @@ fn spawn_all(num_authorities: usize) {
         for out_gossip_rx in out_gossips_rx_vec.drain(..) {
             let inc_gossip_tx_vec1 = inc_gossips_tx_vec.clone();
             let fut = out_gossip_rx.map(move |message| {
-                let gossip_input = inc_gossip_tx_vec1[message.receiver_id].clone();
+                let gossip_input = inc_gossip_tx_vec1[message.receiver_uid].clone();
                 tokio::spawn(
                     gossip_input.send(message).
                         map(|_| ()).map_err(|e| error!("Error relaying message {:?}", e)));
@@ -103,7 +105,7 @@ fn spawn_all(num_authorities: usize) {
         let futures: Vec<_> = v.into_iter().map(|rx| rx.into_future()).collect();
 
         join_all(futures)
-            .map(|v: Vec<(Option<BlockHeader>, _)>| {
+            .map(|v: Vec<(Option<ConsensusBlockBody<DummyPayload>>, _)>| {
                 // Check every authority committed to the same outcome
                 if !v.iter().all(|(outcome, _)| { Some(outcome.clone().expect("Authority not committed")) == v[0].0 }) {
                     panic!("Authorities committed to different outcomes.");

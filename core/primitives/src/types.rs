@@ -217,7 +217,7 @@ pub struct ConsensusBlockHeader {
     pub prev_block_body_hash: CryptoHash,
 }
 
-#[derive(Hash, Debug, PartialEq, Eq)]
+#[derive(Hash, Debug, Clone, PartialEq, Eq)]
 pub struct ConsensusBlockBody<P> {
     /// TxFlow messages that constitute that consensus block together with the endorsements.
     pub messages: Vec<SignedMessageData<P>>,

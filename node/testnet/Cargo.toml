@@ -17,4 +17,4 @@ network = { path = "../network" }
 node-http = { path = "../http" }
 primitives = { path = "../../core/primitives" }
 chain = { path = "../../core/chain" }
-txflow = { path = "../../core/txflow" }
+nightshade = { path = "../../core/nightshade" }

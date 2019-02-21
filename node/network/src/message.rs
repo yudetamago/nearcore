@@ -3,7 +3,8 @@ use primitives::chain::ChainPayload;
 use primitives::chain::ReceiptBlock;
 use primitives::chain::SignedShardBlock;
 use primitives::hash::CryptoHash;
-use primitives::types::{AccountId, BlockId, Gossip};
+use primitives::types::{AccountId, BlockId};
+use nightshade::nightshade_task::Gossip;
 use serde_derive::{Deserialize, Serialize};
 
 pub type RequestId = u64;

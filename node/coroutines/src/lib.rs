@@ -7,7 +7,7 @@ extern crate log;
 extern crate primitives;
 extern crate shard;
 extern crate tokio;
-extern crate txflow;
+extern crate nightshade;
 
 pub mod producer;
 pub mod importer;

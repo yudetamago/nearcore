@@ -7,21 +7,21 @@ use futures::{future, Future, Sink, Stream};
 
 use crate::control_builder::get_control;
 use client::{ChainConsensusBlockBody, Client};
-use txflow::txflow_task::beacon_witness_selector::BeaconWitnessSelector;
-use txflow::txflow_task::Control;
+use nightshade::nightshade_task::Control;
 use primitives::beacon::SignedBeaconBlock;
 use primitives::chain::SignedShardBlock;
 use primitives::chain::ReceiptBlock;
 use primitives::block_traits::SignedBlock;
 use primitives::block_traits::SignedHeader;
 use client::BlockProductionResult;
+use primitives::chain::ChainPayload;
 
 pub fn spawn_block_producer(
     client: Arc<Client>,
     receiver: Receiver<ChainConsensusBlockBody>,
     block_announce_tx: Sender<(SignedBeaconBlock, SignedShardBlock)>,
     new_receipts_tx: Sender<ReceiptBlock>,
-    control_tx: Sender<Control<BeaconWitnessSelector>>,
+    control_tx: Sender<Control<ChainPayload>>,
 ) {
     let control = get_control(&*client, client.beacon_chain.chain.best_block().header().index() + 1);
     let kickoff_task = control_tx
@@ -49,7 +49,7 @@ pub fn spawn_block_producer(
                     Control::Stop => false,
                     Control::Reset(_) => true,
                 };
-                let txflow_task = control_tx
+                let consensus_task = control_tx
                     .clone()
                     .send(control)
                     .map(|_| ())
@@ -68,12 +68,12 @@ pub fn spawn_block_producer(
                             .map_err(|e| error!("Error sending receipts: {}", e));
                             // First tells TxFlow to reset.
                             // Then, redirect the receipts from the previous block for processing in the next one.
-                            tokio::spawn(txflow_task.and_then(|_| receipts_task));
+                            tokio::spawn(consensus_task.and_then(|_| receipts_task));
                         }
                     }
                 } else {
                     // Tells TxFlow to stop.
-                    tokio::spawn(txflow_task);
+                    tokio::spawn(consensus_task);
                 }
             }
             future::ok(())

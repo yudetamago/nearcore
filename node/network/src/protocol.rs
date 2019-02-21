@@ -14,8 +14,8 @@ use log::warn;
 use primitives::network::PeerInfo;
 use primitives::serialize::{Decode, Encode};
 use primitives::types::AccountId;
-use primitives::types::Gossip;
 use std::sync::Arc;
+use nightshade::nightshade_task::Gossip;
 use primitives::chain::ChainPayload;
 use primitives::beacon::SignedBeaconBlock;
 use primitives::chain::SignedShardBlock;
@@ -81,8 +81,9 @@ pub fn spawn_network(
     let peer_manager1 = peer_manager.clone();
     let task = out_gossip_rx.for_each(move |g| {
         let auth_map = client1.get_recent_uid_to_authority_map();
+        let receiver_uid = g.receiver_uid as u64;
         let out_channel = auth_map
-            .get(&g.receiver_uid)
+            .get(&receiver_uid)
             .map(|auth| auth.account_id.clone())
             .and_then(|account_id| peer_manager1.get_account_channel(account_id));
         if let Some(ch) = out_channel {

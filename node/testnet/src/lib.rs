@@ -10,7 +10,7 @@ use configs::{get_testnet_configs, ClientConfig, NetworkConfig, RPCConfig};
 use consensus::adapters::transaction_to_payload;
 use primitives::chain::ChainPayload;
 use primitives::transaction::SignedTransaction;
-use txflow::txflow_task;
+use nightshade::nightshade_task;
 
 pub fn start() {
     let (client_cfg, network_cfg, rpc_cfg) = get_testnet_configs();
@@ -61,20 +61,19 @@ pub fn start_from_configs(client_cfg: ClientConfig, network_cfg: NetworkConfig, 
         );
 
         // Spawn consensus tasks.
-        let (payload_tx, payload_rx) = channel(1024);
-        transaction_to_payload::spawn_task(
-            transactions_rx,
-            |t| ChainPayload { transactions: vec![t], receipts: vec![] },
-            payload_tx.clone()
-        );
-        transaction_to_payload::spawn_task(
-            receipts_rx,
-            |r| ChainPayload { transactions: vec![], receipts: vec![r] },
-            payload_tx.clone()
-        );
-        txflow_task::spawn_task(
+//        let (payload_tx, payload_rx) = channel(1024);
+//        transaction_to_payload::spawn_task(
+//            transactions_rx,
+//            |t| ChainPayload { transactions: vec![t], receipts: vec![] },
+//            payload_tx.clone()
+//        );
+//        transaction_to_payload::spawn_task(
+//            receipts_rx,
+//            |r| ChainPayload { transactions: vec![], receipts: vec![r] },
+//            payload_tx.clone()
+//        );
+        nightshade_task::spawn_task(
             inc_gossip_rx,
-            payload_rx,
             out_gossip_tx,
             consensus_control_rx,
             beacon_block_consensus_body_tx,

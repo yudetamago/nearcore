@@ -3,9 +3,9 @@ use std::fmt;
 use std::io::Cursor;
 use bs58;
 use pairing::{CurveAffine, CurveProjective, EncodedPoint, Engine, Field, GroupDecodingError, PrimeField, PrimeFieldRepr};
-use rand::{OsRng, Rand, Rng};
 use crate::types::ReadableBlsPublicKey;
 use crate::traits::{Base58Encoded, FromBytes, ToBytes};
+use rand_for_bls::{OsRng, Rand, Rng};
 
 const DOMAIN_SIGNATURE: &[u8] = b"_s";
 const DOMAIN_PROOF_OF_POSSESSION: &[u8] = b"_p";
@@ -370,7 +370,7 @@ pub type BlsAggregateSignature = AggregateSignature<Bls12>;
 mod tests {
     use super::*;
 
-    use rand::{SeedableRng, XorShiftRng};
+    use rand_for_bls::{SeedableRng, XorShiftRng};
 
     #[test]
     fn sign_verify() {
