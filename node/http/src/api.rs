@@ -84,7 +84,7 @@ impl HttpApi {
         r: &SubmitTransactionRequest,
     ) -> Result<SubmitTransactionResponse, RPCError> {
         let transaction: SignedTransaction = r.transaction.clone().into();
-        debug!(target: "near-rpc", "Received transaction {:?}", transaction);
+        debug!(target: "near-rpc", "Received transaction {:#?}", transaction);
         let originator = transaction.body.get_originator();
         let mut state_update = self.client.shard_chain.get_state_update();
         let public_keys = self.client.shard_chain.trie_viewer
